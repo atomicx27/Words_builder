@@ -24,6 +24,38 @@ class TileBag {
     return this.letterPool[index];
   }
 
+  // Prevent more than 2 of the same standard letter in a rack
+  preventExcessiveDuplicates(rack) {
+    let attempts = 0;
+    while (attempts < 10) {
+      const counts = {};
+      for (const tile of rack) {
+        counts[tile.letter] = (counts[tile.letter] || 0) + 1;
+      }
+
+      let hasExcess = false;
+      for (let i = 0; i < rack.length; i++) {
+        const tile = rack[i];
+        if (counts[tile.letter] > 2) {
+          // Redraw this tile
+          const newLetter = this.drawRandomLetter();
+          rack[i] = {
+            letter: newLetter,
+            value: LETTER_VALUES[newLetter],
+            isWildcard: false
+          };
+          counts[tile.letter]--;
+          counts[newLetter] = (counts[newLetter] || 0) + 1;
+          hasExcess = true;
+        }
+      }
+
+      if (!hasExcess) break;
+      attempts++;
+    }
+    return rack;
+  }
+
   // Generate a brand new rack: 6 standard letters + 1 wildcard
   generateNewRack() {
     const rack = [];
@@ -35,6 +67,10 @@ class TileBag {
         isWildcard: false
       });
     }
+
+    // Limit duplicates of any letter to max 2
+    this.preventExcessiveDuplicates(rack);
+
     // Add 1 wildcard
     rack.push({
       letter: WILDCARD_CHAR,
@@ -69,6 +105,9 @@ class TileBag {
         isWildcard: false
       });
     }
+
+    // Limit duplicates of any letter to max 2
+    this.preventExcessiveDuplicates(newRack);
     
     // Ensure exactly 1 wildcard exists
     newRack.push({
@@ -79,6 +118,7 @@ class TileBag {
     
     return newRack;
   }
+
 }
 
 const tileBagInstance = new TileBag();
