@@ -48,8 +48,9 @@ class TileBag {
   refillRack(currentTiles) {
     const rack = [...currentTiles];
     
-    // Check if wildcard is present
-    const hasWildcard = rack.some(t => t.isWildcard || t.letter === WILDCARD_CHAR);
+    // Check if wildcard is present (checking that tile is not null first)
+    const hasWildcard = rack.some(t => t && (t.isWildcard || t.letter === WILDCARD_CHAR));
+
     
     // Filter out empty slots (represented by null/undefined or missing elements)
     const activeTiles = rack.filter(t => t !== null && t !== undefined);
