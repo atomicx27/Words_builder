@@ -15,6 +15,22 @@ Words Builder is a real-time, infinite-board multiplayer word game. Players join
 
 ---
 
+## 🎮 Game Rules & How to Play
+
+Words Builder adapts Scrabble word building into a continuous, real-time infinite board:
+
+*   **Grid Connections**: The first word of a room must cover the origin star tile `(0,0)`. Subsequent words must connect to at least one existing tile on the board.
+*   **The Cross-Word Rule**: Placed tiles must form valid words horizontally or vertically, and *all* adjacent side-words formed as a side-effect must also be valid in the dictionary.
+*   **Exchanging Tiles**: You can swap your entire rack of 7 tiles at any time by clicking **Exchange** (costs 1 placement play).
+*   **Safe Reclaims**: Rejects misspelled or disconnected words cleanly, returning tiles to the player's rack. Racks are refilled from the bag only after successful placements.
+*   **Bingo Bonus**: Place all 7 tiles in a single turn to earn a massive **+50 point Bingo bonus**!
+*   **Seeded Multipliers**: Place letters on multiplier squares to amplify your score:
+    *   **DL / TL** (Double/Triple Letter Score): Multiplies the points of that single letter tile.
+    *   **DW / TW** (Double/Triple Word Score): Multiplies the total score of the entire formed word.
+
+---
+
+
 ## 🛠️ Technology Stack
 
 ### Frontend (Client)
