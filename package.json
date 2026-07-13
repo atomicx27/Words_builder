@@ -1,0 +1,37 @@
+{
+  "name": "words-builder",
+  "version": "1.0.0",
+  "description": "Infinite Multiplayer Word World",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "vite",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "vite build",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^2.0.4",
+    "@colyseus/ws-transport": "*",
+    "@datastructures-js/trie": "^3.0.1",
+
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/cors": "^9.0.1",
+    "@libsql/client": "^0.6.2",
+    "bcryptjs": "^2.4.3",
+    "colyseus": "^0.15.6",
+    "colyseus.js": "^0.15.25",
+
+    "fastify": "^4.28.1",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^3.3.7",
+    "pixi-viewport": "^5.0.2",
+    "pixi.js": "^8.2.4"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "vite": "^5.3.3"
+  }
+}

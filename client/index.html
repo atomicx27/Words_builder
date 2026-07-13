@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="neon-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Words Builder — Infinite Multiplayer Word World</title>
+  
+  <!-- Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 1. Canvas Container for PixiJS Rendering -->
+    <div id="game-canvas-container"></div>
+
+    <!-- 2. HTML UI Overlay -->
+    <div id="ui-container">
+      
+      <!-- HUD (Top Status Bar) -->
+      <header id="hud" class="glass-panel hidden">
+        <div class="hud-left">
+          <button id="btn-show-browser" class="icon-btn tooltip" data-tooltip="Session Browser">🌍</button>
+          <div class="session-info">
+            <h1 id="hud-session-name">Loading World...</h1>
+            <span id="hud-session-code" class="session-code"></span>
+          </div>
+        </div>
+        <div class="hud-center">
+          <div id="season-timer-container" class="timer">
+            <span class="timer-label">Season Reset in</span>
+            <span id="hud-season-timer">--:--:--</span>
+          </div>
+        </div>
+        <div class="hud-right">
+          <div class="stats-group">
+            <div class="stat-item tooltip" data-tooltip="Online Builders">
+              <span class="stat-icon">👥</span>
+              <span id="hud-online-count" class="stat-value">0</span>
+            </div>
+            <div class="stat-item tooltip" data-tooltip="Placements Left Today">
+              <span class="stat-icon">✍️</span>
+              <span id="hud-plays-left" class="stat-value">--/--</span>
+            </div>
+            <div class="stat-item score-badge">
+              <span class="stat-label">Score</span>
+              <span id="hud-player-score" class="stat-value">0</span>
+            </div>
+          </div>
+          <button id="btn-settings" class="icon-btn tooltip" data-tooltip="Settings">⚙️</button>
+        </div>
+      </header>
+
+      <!-- Connection / Loading Status Toast -->
+      <div id="status-toast" class="toast hidden"></div>
+
+      <!-- Placed Word Toast notification -->
+      <div id="notification-area"></div>
+
+      <!-- Action Panel (Bottom Shelf) -->
+      <div id="bottom-shelf" class="hidden">
+        <!-- Rack Container -->
+        <div id="rack-container" class="glass-panel">
+          <div id="tile-rack" class="rack">
+            <!-- Dynamically populated 7 tile slots -->
+          </div>
+        </div>
+        
+        <!-- Controls Bar -->
+        <div id="action-bar">
+          <button id="btn-recall" class="btn btn-secondary">Recall</button>
+          <button id="btn-shuffle" class="btn btn-secondary">Shuffle</button>
+          <button id="btn-exchange" class="btn btn-warning tooltip" data-tooltip="Swap all tiles (costs 1 placement)">Exchange</button>
+          <button id="btn-submit" class="btn btn-primary" disabled>
+            <span class="btn-text">Submit Word</span>
+            <span id="submit-score-preview" class="score-preview"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Session Browser Overlay (Startup Screen) -->
+      <div id="session-browser-overlay" class="overlay">
+        <div class="browser-card glass-panel animate-pop">
+          <header class="browser-header">
+            <div class="logo">
+              <span class="logo-icon">🔠</span>
+              <div class="logo-text">
+                <h2>Words Builder</h2>
+                <p>Infinite Multiplayer Word World</p>
+              </div>
+            </div>
+            <button id="btn-browser-profile" class="profile-pill">Guest</button>
+          </header>
+
+          <div class="browser-content">
+            <!-- Join Global World -->
+            <section class="global-join-section">
+              <div class="banner-card">
+                <div class="banner-body">
+                  <h3>The Global World</h3>
+                  <p>Build words with thousands of players on a shared, endless board. Resetting weekly.</p>
+                </div>
+                <button id="btn-join-global" class="btn btn-primary btn-large">Enter Global World 🌍</button>
+              </div>
+            </section>
+
+            <!-- Join Custom Session -->
+            <section class="join-custom-section">
+              <h4>Join Private Session</h4>
+              <div class="input-action-group">
+                <input type="text" id="invite-code-input" placeholder="ENTER INVITE CODE (e.g. A4K9PX)" maxlength="8">
+                <button id="btn-join-code" class="btn btn-primary">Join Room</button>
+              </div>
+            </section>
+
+            <!-- List Public Rooms -->
+            <section class="public-list-section">
+              <h4>Active Public Worlds</h4>
+              <div id="public-sessions-list" class="sessions-grid">
+                <p class="loading-placeholder">Loading active worlds...</p>
+              </div>
+            </section>
+
+            <!-- Create Custom Room -->
+            <section class="create-section">
+              <button id="btn-show-create-modal" class="btn btn-secondary btn-full">Create Your Own World 🏠</button>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Dialogs Container -->
+      <div id="modal-container" class="modal-overlay hidden">
+        
+        <!-- 1. Wildcard Letter Picker Modal -->
+        <div id="wildcard-modal" class="modal-card glass-panel hidden">
+          <h3>Set Wildcard Letter</h3>
+          <p>Choose which letter this wildcard tile should represent:</p>
+          <div class="letter-grid">
+            <!-- Dynamically generated A-Z buttons -->
+          </div>
+        </div>
+
+        <!-- 2. Settings / Profile Modal -->
+        <div id="settings-modal" class="modal-card glass-panel hidden">
+          <div class="modal-header">
+            <h3>Game Options</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <!-- Theme Selection -->
+            <div class="setting-item">
+              <label>Visual Theme</label>
+              <div class="theme-selector">
+                <button class="theme-option active" data-theme="neon-dark" style="background:#0c0f1d; border-color:#0df">Neon Dark</button>
+                <button class="theme-option" data-theme="classic" style="background:#f5ebe0; border-color:#d4a373">Classic</button>
+                <button class="theme-option" data-theme="minimalist" style="background:#f8f9fa; border-color:#adb5bd">Minimalist</button>
+                <button class="theme-option" data-theme="vibrant" style="background:#120c1f; border-color:#ff007f">Vibrant</button>
+              </div>
+            </div>
+
+            <!-- Profile & Auth status -->
+            <div class="setting-item profile-settings">
+              <label>Player Account</label>
+              <div id="profile-status-box">
+                <p>Logged in as <strong id="settings-username">Guest_1234</strong> (Guest Account)</p>
+                <div class="profile-actions">
+                  <button id="btn-show-auth-modal" class="btn btn-primary btn-sm">Upgrade to Permanent Account</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Admin Options Panel (Visible only to session admins) -->
+            <div id="admin-options-panel" class="setting-item admin-box hidden">
+              <label class="admin-label">👑 Host Administration</label>
+              <div class="admin-actions">
+                <button id="btn-admin-reset" class="btn btn-danger btn-sm">Force Reset Board (Archive Season)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Create Custom Session Modal -->
+        <div id="create-session-modal" class="modal-card glass-panel hidden">
+          <div class="modal-header">
+            <h3>Create a New World</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <form id="create-session-form" class="modal-body">
+            <div class="form-group">
+              <label for="room-name">World Name</label>
+              <input type="text" id="room-name" placeholder="My Awesome Word World" required maxlength="30">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="room-duration">Season Duration</label>
+                <select id="room-duration">
+                  <option value="THREE_DAYS">3 Days</option>
+                  <option value="ONE_WEEK" selected>1 Week</option>
+                  <option value="TWO_WEEKS">2 Weeks</option>
+                  <option value="ONE_MONTH">1 Month</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="room-limit">Daily Word Limit</label>
+                <select id="room-limit">
+                  <option value="5">5 Words/day</option>
+                  <option value="10" selected>10 Words/day</option>
+                  <option value="15">15 Words/day</option>
+                  <option value="0">Unlimited</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="room-dict">Dictionary</label>
+                <select id="room-dict">
+                  <option value="SOWPODS" selected>SOWPODS (Collins - Int'l)</option>
+                  <option value="TWL">TWL (Tournament - US)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="room-privacy">Privacy</label>
+                <select id="room-privacy">
+                  <option value="false" selected>Public (Show in Grid)</option>
+                  <option value="true">Private (Invite Code Only)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group checkbox-group">
+              <input type="checkbox" id="room-bonuses" checked>
+              <label for="room-bonuses">Enable Random Seeded Bonus Squares (DL, TL, DW, TW)</label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full">Create and Join 🚀</button>
+          </form>
+        </div>
+
+        <!-- 4. Authenticate (Register/Login) Modal -->
+        <div id="auth-modal" class="modal-card glass-panel hidden">
+          <div class="modal-header">
+            <h3 id="auth-title">Create Account</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <!-- Tabs -->
+            <div class="tabs-header">
+              <button id="tab-register" class="tab-btn active">Sign Up</button>
+              <button id="tab-login" class="tab-btn">Sign In</button>
+            </div>
+
+            <!-- SignUp Form -->
+            <form id="form-register" class="auth-form">
+              <p class="form-hint">Creating an account saves your scores, stats, and custom sessions across all devices.</p>
+              <div class="form-group">
+                <label>Display Name</label>
+                <input type="text" id="reg-username" placeholder="WordSmith" required minlength="3" maxlength="20">
+              </div>
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="reg-email" placeholder="you@example.com" required>
+              </div>
+              <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="reg-password" placeholder="••••••••" required minlength="6">
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">Sign Up & Save 🔒</button>
+            </form>
+
+            <!-- SignIn Form -->
+            <form id="form-login" class="auth-form hidden">
+              <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" id="login-email" placeholder="you@example.com" required>
+              </div>
+              <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" placeholder="••••••••" required>
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">Sign In 🔓</button>
+            </form>
+          </div>
+        </div>
+
+      </div> <!-- End Modal Container -->
+
+    </div> <!-- End UI Container -->
+  </div> <!-- End App -->
+
+  <!-- App Entry Script -->
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
