@@ -94,7 +94,8 @@ class SessionManager {
 
   // List public sessions (invite_code != 'GLOBAL' and isPrivate = false)
   async getPublicSessions() {
-    const rows = await all('SELECT * FROM sessions WHERE invite_code != "GLOBAL"');
+    const rows = await all('SELECT * FROM sessions WHERE invite_code != \'GLOBAL\'');
+
     const sessions = [];
     for (const row of rows) {
       const config = JSON.parse(row.config_json);

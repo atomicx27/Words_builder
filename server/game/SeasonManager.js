@@ -9,9 +9,10 @@ class SeasonManager {
     
     // Find active season
     let activeSeason = await get(
-      'SELECT * FROM seasons WHERE session_id = ? AND status = "active"',
+      'SELECT * FROM seasons WHERE session_id = ? AND status = \'active\'',
       [session.id]
     );
+
 
     if (activeSeason) {
       // Check if expired
@@ -98,9 +99,10 @@ class SeasonManager {
 
     // 4. Update season status
     await run(
-      'UPDATE seasons SET status = "archived" WHERE id = ?',
+      'UPDATE seasons SET status = \'archived\' WHERE id = ?',
       [seasonId]
     );
+
 
     // 5. Delete active tiles (since they are now in the snapshot)
     await run(
@@ -155,10 +157,11 @@ class SeasonManager {
   async getArchivedSeasons(sessionId) {
     const rows = await all(
       `SELECT id, start_time as startTime, end_time as endTime 
-       FROM seasons WHERE session_id = ? AND status = "archived"
+       FROM seasons WHERE session_id = ? AND status = 'archived'
        ORDER BY start_time DESC`,
       [sessionId]
     );
+
     return rows;
   }
 
@@ -175,9 +178,10 @@ class SeasonManager {
   async forceResetSeason(session) {
     // Find active season
     const activeSeason = await get(
-      'SELECT id FROM seasons WHERE session_id = ? AND status = "active"',
+      'SELECT id FROM seasons WHERE session_id = ? AND status = \'active\'',
       [session.id]
     );
+
 
     if (activeSeason) {
       console.log(`Force resetting season ${activeSeason.id} for session ${session.id}...`);
