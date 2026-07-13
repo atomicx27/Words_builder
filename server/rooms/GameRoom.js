@@ -32,6 +32,9 @@ class GameRoom extends Room {
     this.board = new Board(this.activeSeason.id);
     await this.board.load();
 
+    // Initialize sequential placement queue
+    this.placementQueue = Promise.resolve();
+
     // Set state
     this.setState(new GameState());
     this.state.seasonEndTime = this.activeSeason.endTime;
@@ -103,109 +106,54 @@ class GameRoom extends Room {
     });
 
     // 2. Client submits a word placement
-    this.onMessage(CLIENT_MESSAGES.PLACE_WORD, async (client, data) => {
-      const playerId = client.userData.playerId;
-      const player = playerManager.getActivePlayer(playerId);
-      const pendingTiles = data.tiles;
-
-      if (!player) {
-        client.send('placement_error', { error: 'Player session not found.' });
-        return;
-      }
-
-      // Authoritative verification and scoring
-      const result = await gameEngine.validateAndScorePlacement(
-        this.board,
-        player,
-        pendingTiles,
-        this.sessionConfig
-      );
-
-      if (!result.valid) {
-        client.send('placement_error', { error: result.error });
-        return;
-      }
-
-      const now = Date.now();
-      const placedTiles = result.placedTiles.map(t => ({
-        ...t,
-        playerId,
-        placedAt: now
-      }));
-
-      // Commit tiles to board (DB + memory)
-      await this.board.placeTiles(placedTiles);
-
-      // Increment score in DB and memory
-      const dbScore = await seasonManager.addSeasonScore(this.activeSeason.id, playerId, result.score);
-      player.score = dbScore.score;
-      playerManager.incrementWordCount(playerId);
-
-      // Update state schema for delta sync
-      const playerSchema = this.state.players.get(playerId);
-      if (playerSchema) {
-        playerSchema.score = player.score;
-        playerSchema.wordsToday = player.wordsToday;
-      }
-
-      // Remove placed tiles from server-side player rack
-      for (const tile of pendingTiles) {
-        if (tile.rackIndex !== undefined && tile.rackIndex >= 0 && tile.rackIndex < player.rack.length) {
-          player.rack[tile.rackIndex] = null;
+    this.onMessage(CLIENT_MESSAGES.PLACE_WORD, (client, data) => {
+      this.placementQueue = this.placementQueue.then(async () => {
+        try {
+          await this.handlePlaceWord(client, data);
+        } catch (err) {
+          console.error("Error in sequential placement queue:", err);
+          client.send('placement_error', { error: 'Internal server error processing placement.' });
         }
-      }
-
-      // Refill player's tile rack
-      player.rack = tileBag.refillRack(player.rack);
-
-
-      // Send success response to placer with their new rack and score breakdown
-      client.send('placement_success', {
-        rack: player.rack,
-        score: player.score,
-        wordsToday: player.wordsToday,
-        wordsFormed: result.wordsFormed
-      });
-
-      // Broadcast newly placed tiles to everyone in the room
-      this.broadcast('tiles_placed', {
-        tiles: placedTiles,
-        score: result.score,
-        playerId,
-        displayName: player.displayName
       });
     });
 
     // 3. Client exchanges tile rack (costs 1 daily word allowance)
     this.onMessage(CLIENT_MESSAGES.EXCHANGE_TILES, (client) => {
-      const playerId = client.userData.playerId;
-      const player = playerManager.getActivePlayer(playerId);
+      this.placementQueue = this.placementQueue.then(async () => {
+        try {
+          const playerId = client.userData.playerId;
+          const player = playerManager.getActivePlayer(playerId);
 
-      if (!player) return;
+          if (!player) return;
 
-      const dailyLimit = this.sessionConfig.dailyWordLimit ?? 10;
-      const isUnlimited = dailyLimit === 'Unlimited' || dailyLimit <= 0;
+          const dailyLimit = this.sessionConfig.dailyWordLimit ?? 10;
+          const isUnlimited = dailyLimit === 'Unlimited' || dailyLimit <= 0;
 
-      if (!isUnlimited && player.wordsToday >= dailyLimit) {
-        client.send('placement_error', { error: 'Cannot exchange tiles: Daily limit reached.' });
-        return;
-      }
+          if (!isUnlimited && player.wordsToday >= dailyLimit) {
+            client.send('placement_error', { error: 'Cannot exchange tiles: Daily limit reached.' });
+            return;
+          }
 
-      // Generate a brand new rack
-      player.rack = tileBag.generateNewRack();
-      playerManager.incrementWordCount(playerId);
+          // Generate a brand new rack
+          player.rack = tileBag.generateNewRack();
+          playerManager.incrementWordCount(playerId);
 
-      // Update schema
-      const playerSchema = this.state.players.get(playerId);
-      if (playerSchema) {
-        playerSchema.wordsToday = player.wordsToday;
-      }
+          // Update schema
+          const playerSchema = this.state.players.get(playerId);
+          if (playerSchema) {
+            playerSchema.wordsToday = player.wordsToday;
+          }
 
-      client.send('placement_success', {
-        rack: player.rack,
-        score: player.score,
-        wordsToday: player.wordsToday,
-        wordsFormed: [] // No words formed
+          client.send('placement_success', {
+            rack: player.rack,
+            score: player.score,
+            wordsToday: player.wordsToday,
+            wordsFormed: [] // No words formed
+          });
+        } catch (err) {
+          console.error("Error in sequential exchange queue:", err);
+          client.send('placement_error', { error: 'Internal server error processing exchange.' });
+        }
       });
     });
 
@@ -263,6 +211,77 @@ class GameRoom extends Room {
     });
   }
 
+  async handlePlaceWord(client, data) {
+    const playerId = client.userData.playerId;
+    const player = playerManager.getActivePlayer(playerId);
+    const pendingTiles = data.tiles;
+
+    if (!player) {
+      client.send('placement_error', { error: 'Player session not found.' });
+      return;
+    }
+
+    // Refresh board to catch any tiles placed by concurrent queued tasks
+    await this.board.load();
+
+    const result = await gameEngine.validateAndScorePlacement(
+      this.board,
+      player,
+      pendingTiles,
+      this.sessionConfig
+    );
+
+    if (!result.valid) {
+      client.send('placement_error', { error: result.error });
+      return;
+    }
+
+    const now = Date.now();
+    const placedTiles = result.placedTiles.map(t => ({
+      ...t,
+      playerId,
+      placedAt: now
+    }));
+
+    // Commit tiles to board (DB + memory)
+    await this.board.placeTiles(placedTiles);
+
+    // Increment score in DB and memory
+    const dbScore = await seasonManager.addSeasonScore(this.activeSeason.id, playerId, result.score);
+    player.score = dbScore.score;
+    playerManager.incrementWordCount(playerId);
+
+    // Update state schema for delta sync
+    const playerSchema = this.state.players.get(playerId);
+    if (playerSchema) {
+      playerSchema.score = player.score;
+      playerSchema.wordsToday = player.wordsToday;
+    }
+
+    // Remove placed tiles from server-side player rack using verified rack indices
+    for (const tile of result.placedTiles) {
+      player.rack[tile.rackIndex] = null;
+    }
+
+    // Refill player's tile rack
+    player.rack = tileBag.refillRack(player.rack);
+
+    // Send success response to placer with their new rack and score breakdown
+    client.send('placement_success', {
+      rack: player.rack,
+      score: player.score,
+      wordsToday: player.wordsToday,
+      wordsFormed: result.wordsFormed
+    });
+
+    // Broadcast newly placed tiles to everyone in the room
+    this.broadcast('tiles_placed', {
+      tiles: placedTiles,
+      score: result.score,
+      playerId,
+      displayName: player.displayName
+    });
+  }
 
   async onJoin(client, options) {
     const { playerId } = options;

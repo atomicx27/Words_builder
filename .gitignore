@@ -23,3 +23,8 @@ dist-ssr/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Agent briefing files
+.agents/
+ORIGINAL_REQUEST.md
+

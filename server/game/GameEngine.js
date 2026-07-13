@@ -38,13 +38,83 @@ class GameEngine {
       };
     }
 
-    if (!pendingTiles || pendingTiles.length === 0) {
+    if (!Array.isArray(pendingTiles)) {
+      return { valid: false, error: 'Invalid tile placement: tiles must be an array.' };
+    }
+
+    if (pendingTiles.length === 0) {
       return { valid: false, error: 'No tiles provided for placement.' };
+    }
+
+    if (!player || !player.rack) {
+      return { valid: false, error: 'Invalid player rack.' };
+    }
+
+    // --- R1: Server-side Rack verification ---
+    const tempRack = [...player.rack];
+    const verifiedTiles = [];
+    const usedRackIndices = new Set();
+
+    for (const tile of pendingTiles) {
+      if (!tile || typeof tile !== 'object') {
+        return { valid: false, error: 'Invalid tile placement: each tile must be a valid object.' };
+      }
+      const idx = tile.rackIndex;
+      if (idx === undefined || idx < 0 || idx >= tempRack.length) {
+        return { valid: false, error: 'Invalid tile placement: missing or invalid rack index.' };
+      }
+      if (usedRackIndices.has(idx)) {
+        return { valid: false, error: 'Invalid tile placement: duplicate rack index used.' };
+      }
+      
+      const serverTile = tempRack[idx];
+      if (!serverTile) {
+        return { valid: false, error: `Invalid tile placement: tile at rack index ${idx} is empty.` };
+      }
+
+      if (typeof tile.letter !== 'string') {
+        return { valid: false, error: 'Invalid tile placement: letter must be a string character.' };
+      }
+      const placedLetter = tile.letter.toUpperCase();
+      if (!placedLetter || placedLetter.length !== 1 || placedLetter < 'A' || placedLetter > 'Z') {
+        return { valid: false, error: 'Invalid tile placement: letter must be a single character A-Z.' };
+      }
+
+      if (serverTile.isWildcard || serverTile.letter === '*') {
+        // Enforce wildcard properties
+        verifiedTiles.push({
+          x: tile.x,
+          y: tile.y,
+          letter: placedLetter,
+          value: 0,
+          isWildcard: true,
+          rackIndex: idx
+        });
+      } else {
+        // Enforce standard tile properties matching server-side rack
+        if (serverTile.letter !== placedLetter) {
+          return {
+            valid: false,
+            error: `Invalid tile placement: letter "${placedLetter}" does not match rack tile "${serverTile.letter}".`
+          };
+        }
+        verifiedTiles.push({
+          x: tile.x,
+          y: tile.y,
+          letter: serverTile.letter,
+          value: serverTile.value,
+          isWildcard: false,
+          rackIndex: idx
+        });
+      }
+
+      tempRack[idx] = null;
+      usedRackIndices.add(idx);
     }
 
     // Sort pending tiles to make checks easier
     // We sort by x, then by y
-    const sortedTiles = [...pendingTiles].sort((a, b) => a.x - b.x || a.y - b.y);
+    const sortedTiles = [...verifiedTiles].sort((a, b) => a.x - b.x || a.y - b.y);
 
     // 2. Collision Check
     for (const tile of sortedTiles) {
