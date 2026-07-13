@@ -80,8 +80,8 @@ class ColyseusClient {
       }
 
       // Re-draw board at pending container index
+      boardRenderer.redrawChunksForTiles(tiles);
       boardRenderer.drawPendingTiles();
-      boardRenderer.handleViewportMoved(); // Forces redraw of visible chunks containing new tiles
 
       // Trigger custom UI notification
       if (this.onMessageCallback) {
@@ -106,8 +106,8 @@ class ColyseusClient {
       }
 
       boardState.pendingTiles.clear();
+      boardRenderer.redrawChunksForTiles(pending);
       boardRenderer.drawPendingTiles();
-      boardRenderer.handleViewportMoved();
 
       // Set new rack
       tileRack.setTiles(rack);
@@ -116,6 +116,7 @@ class ColyseusClient {
         this.onMessageCallback('placement_success', { score, wordsToday, wordsFormed });
       }
     });
+
 
     // 5. Direct message: client placement rejected
     this.room.onMessage('placement_error', (data) => {

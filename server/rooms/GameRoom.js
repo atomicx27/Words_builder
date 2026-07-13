@@ -148,8 +148,16 @@ class GameRoom extends Room {
         playerSchema.wordsToday = player.wordsToday;
       }
 
+      // Remove placed tiles from server-side player rack
+      for (const tile of pendingTiles) {
+        if (tile.rackIndex !== undefined && tile.rackIndex >= 0 && tile.rackIndex < player.rack.length) {
+          player.rack[tile.rackIndex] = null;
+        }
+      }
+
       // Refill player's tile rack
       player.rack = tileBag.refillRack(player.rack);
+
 
       // Send success response to placer with their new rack and score breakdown
       client.send('placement_success', {

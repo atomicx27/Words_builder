@@ -551,7 +551,34 @@ class BoardRenderer {
     }
   }
 
+  redrawChunksForTiles(placedTiles) {
+    const uniqueChunks = new Set();
+    for (const tile of placedTiles) {
+      const cx = Math.floor(tile.x / 32);
+      const cy = Math.floor(tile.y / 32);
+      uniqueChunks.add(`${cx},${cy}`);
+    }
+
+    for (const key of uniqueChunks) {
+      const [cx, cy] = key.split(',').map(Number);
+      const chunkTiles = [];
+      const startX = cx * 32;
+      const endX = (cx + 1) * 32 - 1;
+      const startY = cy * 32;
+      const endY = (cy + 1) * 32 - 1;
+
+      for (const t of boardState.tiles.values()) {
+        if (t.x >= startX && t.x <= endX && t.y >= startY && t.y <= endY) {
+          chunkTiles.push(t);
+        }
+      }
+
+      this.drawChunk(cx, cy, chunkTiles);
+    }
+  }
+
   setTheme(themeName) {
+
     if (!THEME_COLORS[themeName]) return;
     this.currentTheme = themeName;
     
