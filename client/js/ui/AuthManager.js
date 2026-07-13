@@ -1,5 +1,7 @@
 import hud from './HUD.js';
 import sessionBrowser from './SessionBrowser.js';
+import { BACKEND_URL } from '../network/config.js';
+
 
 class AuthManager {
   constructor() {
@@ -12,13 +14,14 @@ class AuthManager {
     const savedPlayerId = localStorage.getItem('playerId');
     
     try {
-      const res = await fetch('/api/auth/guest', {
+      const res = await fetch(`${BACKEND_URL}/api/auth/guest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ playerId: savedPlayerId })
       });
+
 
       const data = await res.json();
       if (!res.ok || !data.player) {
@@ -96,13 +99,14 @@ class AuthManager {
     hud.showStatus('Creating account...');
 
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ displayName, email, password })
       });
+
 
       const data = await res.json();
       if (!res.ok) {
@@ -116,10 +120,13 @@ class AuthManager {
       sessionBrowser.updateProfileButton();
       
       // Update settings UI
-      const usernameEl = document.getElementById('settings-username');
-      if (usernameEl) usernameEl.textContent = displayName;
+      const usernameInput = document.getElementById('settings-username-input');
+      const accountTypeEl = document.getElementById('settings-account-type');
+      if (usernameInput) usernameInput.value = displayName;
+      if (accountTypeEl) accountTypeEl.textContent = 'Registered Account';
 
       this.close();
+
     } catch (err) {
       hud.showStatus('Network error during registration.');
     }
@@ -135,13 +142,14 @@ class AuthManager {
     hud.showStatus('Signing in...');
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ email, password })
       });
+
 
       const data = await res.json();
       if (!res.ok) {
@@ -158,10 +166,13 @@ class AuthManager {
       sessionBrowser.playerId = data.player.id;
       sessionBrowser.updateProfileButton();
       
-      const usernameEl = document.getElementById('settings-username');
-      if (usernameEl) usernameEl.textContent = data.player.displayName;
+      const usernameInput = document.getElementById('settings-username-input');
+      const accountTypeEl = document.getElementById('settings-account-type');
+      if (usernameInput) usernameInput.value = data.player.displayName;
+      if (accountTypeEl) accountTypeEl.textContent = 'Registered Account';
 
       this.close();
+
       
       // Re-trigger browser reload to fetch rooms under new ID
       sessionBrowser.loadPublicSessions();

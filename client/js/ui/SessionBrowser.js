@@ -1,5 +1,7 @@
 import colyseusClient from '../network/ColyseusClient.js';
 import hud from './HUD.js';
+import { BACKEND_URL } from '../network/config.js';
+
 
 class SessionBrowser {
   constructor() {
@@ -127,7 +129,8 @@ class SessionBrowser {
 
     hud.showStatus('Locating session...');
     try {
-      const res = await fetch(`/api/sessions/code/${code}`);
+      const res = await fetch(`${BACKEND_URL}/api/sessions/code/${code}`);
+
       const data = await res.json();
       
       if (!res.ok || !data.session) {
@@ -150,7 +153,8 @@ class SessionBrowser {
     listEl.innerHTML = '<p class="loading-placeholder">Loading active worlds...</p>';
 
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch(`${BACKEND_URL}/api/sessions`);
+
       const data = await res.json();
 
       if (!res.ok || !data.sessions) {
@@ -218,7 +222,7 @@ class SessionBrowser {
     hud.showStatus('Creating custom world...');
 
     try {
-      const res = await fetch('/api/sessions', {
+      const res = await fetch(`${BACKEND_URL}/api/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -234,6 +238,7 @@ class SessionBrowser {
           }
         })
       });
+
 
       const data = await res.json();
       if (!res.ok || !data.session) {

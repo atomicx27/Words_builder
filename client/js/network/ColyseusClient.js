@@ -4,17 +4,18 @@ import boardState from '../board/BoardState.js';
 import boardRenderer from '../board/BoardRenderer.js';
 import tileRack from '../game/TileRack.js';
 import { CLIENT_MESSAGES } from '../../../shared/constants.js';
+import { BACKEND_URL } from './config.js';
 
 class ColyseusClient {
   constructor() {
-    // Connect to port 3001 directly on localhost, else use relative host for prod
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' ? 'localhost:3001' : window.location.host;
+    // Convert HTTP protocol of BACKEND_URL to WS protocol
+    const wsUrl = BACKEND_URL.replace(/^http/, 'ws');
     
-    this.endpoint = `${protocol}//${host}`;
+    this.endpoint = wsUrl;
     console.log(`Connecting to Colyseus endpoint: ${this.endpoint}`);
     
     this.client = new Colyseus.Client(this.endpoint);
+
     this.room = null;
     
     // Status callbacks

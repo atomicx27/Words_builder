@@ -1,5 +1,7 @@
 import boardRenderer from '../board/BoardRenderer.js';
 import sessionBrowser from './SessionBrowser.js';
+import { BACKEND_URL } from '../network/config.js';
+
 
 
 class HUD {
@@ -57,13 +59,14 @@ class HUD {
       btnSaveUsername.textContent = 'Saving...';
 
       try {
-        const res = await fetch('/api/auth/username', {
+        const res = await fetch(`${BACKEND_URL}/api/auth/username`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ displayName: newName })
         });
+
 
         const data = await res.json();
         if (!res.ok) {
