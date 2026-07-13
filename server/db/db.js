@@ -10,8 +10,10 @@ const dbUrl = process.env.DATABASE_URL || 'file:dev.db';
 console.log(`Connecting to database at: ${dbUrl}`);
 
 export const db = createClient({
-  url: dbUrl
+  url: dbUrl,
+  authToken: process.env.DB_AUTH_TOKEN || undefined
 });
+
 
 export async function initDb() {
   try {
