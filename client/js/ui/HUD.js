@@ -1,4 +1,6 @@
 import boardRenderer from '../board/BoardRenderer.js';
+import sessionBrowser from './SessionBrowser.js';
+
 
 class HUD {
   constructor() {
@@ -39,7 +41,57 @@ class HUD {
         this.closeSettingsModal();
       }
     });
+
+    // Save username action
+    const btnSaveUsername = document.getElementById('btn-save-username');
+    const inputUsername = document.getElementById('settings-username-input');
+
+    btnSaveUsername.addEventListener('click', async () => {
+      const newName = inputUsername.value.trim();
+      if (!newName) {
+        this.showStatus('Username cannot be empty.');
+        return;
+      }
+
+      btnSaveUsername.disabled = true;
+      btnSaveUsername.textContent = 'Saving...';
+
+      try {
+        const res = await fetch('/api/auth/username', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ displayName: newName })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          this.showStatus(data.error || 'Failed to update username.');
+          return;
+        }
+
+        // Save updated player
+        window.playerSession = data.player;
+
+        // Sync to Colyseus room if connected
+        if (this.colyseusClient && this.colyseusClient.room) {
+          this.colyseusClient.room.send('change_username', { displayName: newName });
+        }
+
+        // Update other UIs
+        sessionBrowser.updateProfileButton();
+
+        this.showStatus('Username updated successfully!');
+      } catch (err) {
+        this.showStatus('Network error during username update.');
+      } finally {
+        btnSaveUsername.disabled = false;
+        btnSaveUsername.textContent = 'Save';
+      }
+    });
   }
+
 
 
   // Create absolute tooltip element in DOM
@@ -176,7 +228,9 @@ class HUD {
     const createModal = document.getElementById('create-session-modal');
     const authModal = document.getElementById('auth-modal');
     const adminPanel = document.getElementById('admin-options-panel');
-    const usernameEl = document.getElementById('settings-username');
+    
+    const usernameInput = document.getElementById('settings-username-input');
+    const accountTypeEl = document.getElementById('settings-account-type');
 
     // Hide other modals
     createModal.classList.add('hidden');
@@ -184,7 +238,9 @@ class HUD {
 
     // Load credentials info
     if (window.playerSession) {
-      usernameEl.textContent = window.playerSession.displayName;
+      usernameInput.value = window.playerSession.displayName;
+      accountTypeEl.textContent = window.playerSession.isGuest ? 'Guest Account' : 'Registered Account';
+      
       const upgradeBtn = document.getElementById('btn-show-auth-modal');
       if (window.playerSession.isGuest) {
         upgradeBtn.style.display = 'block';
@@ -192,6 +248,7 @@ class HUD {
         upgradeBtn.style.display = 'none';
       }
     }
+
 
     // Toggle admin panel visibility if the current user is host admin
     if (this.colyseusClient && this.colyseusClient.room) {

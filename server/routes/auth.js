@@ -162,4 +162,55 @@ export default async function authRoutes(fastify, options) {
   }, async (request, reply) => {
     return { player: request.user };
   });
+
+  // 5. Change display name (username)
+  fastify.post('/api/auth/username', {
+    preHandler: [fastify.authenticate]
+  }, async (request, reply) => {
+    const { displayName } = request.body || {};
+    const playerId = request.user.id;
+
+    if (!displayName) {
+      reply.code(400).send({ error: 'Username is required.' });
+      return;
+    }
+
+    const trimmed = displayName.trim();
+    if (trimmed.length < 2 || trimmed.length > 20) {
+      reply.code(400).send({ error: 'Username must be between 2 and 20 characters.' });
+      return;
+    }
+
+    const nameRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!nameRegex.test(trimmed)) {
+      reply.code(400).send({ error: 'Username can only contain letters, numbers, underscores, and hyphens.' });
+      return;
+    }
+
+    try {
+      await playerManager.updateDisplayName(playerId, trimmed);
+
+      const player = {
+        id: playerId,
+        displayName: trimmed,
+        isGuest: request.user.isGuest
+      };
+
+      const token = generateToken(player);
+
+      reply.setCookie('token', token, {
+        path: '/',
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60
+      });
+
+      return {
+        token,
+        player
+      };
+    } catch (err) {
+      reply.code(500).send({ error: 'Failed to update username.' });
+    }
+  });
 }
+

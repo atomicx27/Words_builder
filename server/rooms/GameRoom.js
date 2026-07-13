@@ -249,7 +249,20 @@ class GameRoom extends Room {
         seasonEndTime: this.activeSeason.endTime
       });
     });
+
+    // 5. Change display name (real-time sync)
+    this.onMessage('change_username', (client, data) => {
+      const { displayName } = data;
+      const playerId = client.userData.playerId;
+
+      const playerSchema = this.state.players.get(playerId);
+      if (playerSchema && displayName) {
+        playerSchema.displayName = displayName;
+        console.log(`Real-time username sync: Player ${playerId} changed name to ${displayName}`);
+      }
+    });
   }
+
 
   async onJoin(client, options) {
     const { playerId } = options;

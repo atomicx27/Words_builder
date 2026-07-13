@@ -165,14 +165,19 @@
 
             <!-- Profile & Auth status -->
             <div class="setting-item profile-settings">
-              <label>Player Account</label>
+              <label>Player Username</label>
               <div id="profile-status-box">
-                <p>Logged in as <strong id="settings-username">Guest_1234</strong> (Guest Account)</p>
+                <div class="input-action-group" style="margin-bottom: 12px; display: flex; gap: 8px;">
+                  <input type="text" id="settings-username-input" placeholder="Enter username" maxlength="20" style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; color: #fff; font-size: 0.9rem;">
+                  <button id="btn-save-username" class="btn btn-primary btn-sm">Save</button>
+                </div>
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;" id="settings-account-type">Guest Account</p>
                 <div class="profile-actions">
-                  <button id="btn-show-auth-modal" class="btn btn-primary btn-sm">Upgrade to Permanent Account</button>
+                  <button id="btn-show-auth-modal" class="btn btn-secondary btn-sm btn-full">Upgrade to Permanent Account</button>
                 </div>
               </div>
             </div>
+
 
             <!-- Admin Options Panel (Visible only to session admins) -->
             <div id="admin-options-panel" class="setting-item admin-box hidden">
