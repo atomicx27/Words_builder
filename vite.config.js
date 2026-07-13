@@ -2,7 +2,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: 'client',
+  plugins: [],
   server: {
+
     port: 5173,
     proxy: {
       '/api': {
