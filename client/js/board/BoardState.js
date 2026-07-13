@@ -72,10 +72,11 @@ class BoardState {
     return pending;
   }
 
-  // Check if the board is empty
+  // Check if the board is empty (no permanent tiles synced from server)
   isEmpty() {
-    return this.tiles.size === 0 && this.pendingTiles.size === 0;
+    return this.tiles.size === 0;
   }
+
 
   // Clear everything (on season resets)
   clearAll() {
