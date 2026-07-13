@@ -1,8 +1,7 @@
 import * as PIXI from 'pixi.js';
-import { Viewport } from 'pixi-viewport';
 import boardState from './BoardState.js';
 import chunkManager, { TILE_SIZE, getBonusType } from './ChunkManager.js';
-import { BONUS_TYPES } from '../../../shared/constants.js';
+import { BONUS_TYPES, ZOOM_MIN, ZOOM_MAX } from '../../../shared/constants.js';
 
 // Theme colors mapping for PixiJS (hex numbers)
 const THEME_COLORS = {
@@ -68,6 +67,205 @@ const THEME_COLORS = {
   }
 };
 
+// Custom lightweight camera viewport for PixiJS v8 compatibility
+class CustomViewport extends PIXI.Container {
+  constructor(app, containerEl) {
+    super();
+    this.app = app;
+    this.containerEl = containerEl;
+    this.scale.set(1.0);
+    this.position.set(0, 0);
+
+    // Interaction states
+    this.isDragging = false;
+    this.lastPointerPos = { x: 0, y: 0 };
+    this.touches = new Map(); // For multitouch pinch-to-zoom
+    this.lastPinchDist = 0;
+
+    // Enable interactions
+    this.interactive = true;
+    
+    // Bind event listeners
+    this.setupListeners();
+  }
+
+  setupListeners() {
+    // 1. Mouse Wheel Zoom
+    this.containerEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      
+      const rect = this.containerEl.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      this.zoomAt(mouseX, mouseY, zoomFactor);
+    }, { passive: false });
+
+    // 2. Drag & Drop Pan (Pixi Pointer Events)
+    this.app.stage.interactive = true;
+    this.app.stage.hitArea = this.app.screen;
+
+    this.app.stage.on('pointerdown', (e) => {
+      const originalEvent = e.originalEvent;
+
+      if (originalEvent instanceof TouchEvent) {
+        // Track multiple touches
+        for (let i = 0; i < originalEvent.changedTouches.length; i++) {
+          const touch = originalEvent.changedTouches[i];
+          this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+        }
+
+        if (this.touches.size === 2) {
+          // Multitouch starts
+          this.isDragging = false;
+          this.lastPinchDist = this.getPinchDistance();
+        } else if (this.touches.size === 1) {
+          this.isDragging = true;
+          const touch = originalEvent.changedTouches[0];
+          this.lastPointerPos = { x: touch.clientX, y: touch.clientY };
+        }
+      } else {
+        // Mouse click
+        this.isDragging = true;
+        this.lastPointerPos = { x: e.global.x, y: e.global.y };
+      }
+    });
+
+    this.app.stage.on('pointermove', (e) => {
+      const originalEvent = e.originalEvent;
+
+      if (originalEvent instanceof TouchEvent) {
+        // Update tracked touch positions
+        for (let i = 0; i < originalEvent.touches.length; i++) {
+          const touch = originalEvent.touches[i];
+          if (this.touches.has(touch.identifier)) {
+            this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+          }
+        }
+
+        if (this.touches.size === 2) {
+          // Process Pinch-to-Zoom
+          const dist = this.getPinchDistance();
+          if (this.lastPinchDist > 0 && dist > 0) {
+            const zoomFactor = dist / this.lastPinchDist;
+            
+            // Get center point of pinch
+            const touchArray = Array.from(this.touches.values());
+            const rect = this.containerEl.getBoundingClientRect();
+            const centerX = ((touchArray[0].x + touchArray[1].x) / 2) - rect.left;
+            const centerY = ((touchArray[0].y + touchArray[1].y) / 2) - rect.top;
+
+            this.zoomAt(centerX, centerY, zoomFactor);
+          }
+          this.lastPinchDist = dist;
+        } else if (this.isDragging && this.touches.size === 1) {
+          // Single-touch pan
+          const touch = originalEvent.touches[0];
+          const dx = touch.clientX - this.lastPointerPos.x;
+          const dy = touch.clientY - this.lastPointerPos.y;
+          
+          this.x += dx;
+          this.y += dy;
+          this.lastPointerPos = { x: touch.clientX, y: touch.clientY };
+          this.emit('moved');
+        }
+      } else {
+        // Mouse drag pan
+        if (this.isDragging) {
+          const dx = e.global.x - this.lastPointerPos.x;
+          const dy = e.global.y - this.lastPointerPos.y;
+          
+          this.x += dx;
+          this.y += dy;
+          this.lastPointerPos = { x: e.global.x, y: e.global.y };
+          this.emit('moved');
+        }
+      }
+    });
+
+    // End drag/pinch
+    const endPointer = (e) => {
+      const originalEvent = e.originalEvent;
+      if (originalEvent instanceof TouchEvent) {
+        for (let i = 0; i < originalEvent.changedTouches.length; i++) {
+          this.touches.delete(originalEvent.changedTouches[i].identifier);
+        }
+        if (this.touches.size < 2) {
+          this.lastPinchDist = 0;
+        }
+        if (this.touches.size === 0) {
+          this.isDragging = false;
+        } else if (this.touches.size === 1) {
+          this.isDragging = true;
+          const remainingTouch = Array.from(this.touches.values())[0];
+          this.lastPointerPos = { x: remainingTouch.x, y: remainingTouch.y };
+        }
+      } else {
+        this.isDragging = false;
+      }
+    };
+
+    this.app.stage.on('pointerup', endPointer);
+    this.app.stage.on('pointerupoutside', endPointer);
+  }
+
+  // Calculate distance between two touches
+  getPinchDistance() {
+    if (this.touches.size < 2) return 0;
+    const pts = Array.from(this.touches.values());
+    const dx = pts[0].x - pts[1].x;
+    const dy = pts[0].y - pts[1].y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // Stateless zoom centered on screen coordinates (pivot zoom)
+  zoomAt(screenX, screenY, factor) {
+    const worldX = (screenX - this.x) / this.scale.x;
+    const worldY = (screenY - this.y) / this.scale.y;
+
+    const oldScale = this.scale.x;
+    const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldScale * factor));
+
+    if (newScale === oldScale) return;
+
+    this.scale.set(newScale);
+    this.x = screenX - worldX * newScale;
+    this.y = screenY - worldY * newScale;
+
+    this.emit('moved');
+  }
+
+  // Move camera center to world coordinate (x,y)
+  moveCenter(worldX, worldY) {
+    const screenCenterX = this.app.screen.width / 2;
+    const screenCenterY = this.app.screen.height / 2;
+
+    this.x = screenCenterX - worldX * this.scale.x;
+    this.y = screenCenterY - worldY * this.scale.y;
+    
+    this.emit('moved');
+  }
+
+  // Retrieve current world bounding box in viewport
+  getVisibleBounds() {
+    const left = (0 - this.x) / this.scale.x;
+    const top = (0 - this.y) / this.scale.y;
+    const right = (this.app.screen.width - this.x) / this.scale.x;
+    const bottom = (this.app.screen.height - this.y) / this.scale.y;
+
+    return { left, top, right, bottom };
+  }
+
+  // Map screen points to world coordinate space
+  toWorld(screenPoint) {
+    return {
+      x: (screenPoint.x - this.x) / this.scale.x,
+      y: (screenPoint.y - this.y) / this.scale.y
+    };
+  }
+}
+
 class BoardRenderer {
   constructor() {
     this.app = null;
@@ -86,17 +284,14 @@ class BoardRenderer {
     this.onTileHoverCallback = null;
   }
 
-  // Set click callback
   onCellClicked(callback) {
     this.onCellClickedCallback = callback;
   }
 
-  // Set hover callback (shows who placed it)
   onTileHover(callback) {
     this.onTileHoverCallback = callback;
   }
 
-  // Initialize PixiJS Application
   async init(containerEl, defaultTheme = 'neon-dark') {
     this.currentTheme = defaultTheme;
 
@@ -112,24 +307,9 @@ class BoardRenderer {
 
     containerEl.appendChild(this.app.canvas);
 
-    // Create Viewport
-    this.viewport = new Viewport({
-      screenWidth: window.innerWidth,
-      screenHeight: window.innerHeight,
-      worldWidth: 1000000, // Large bounds for infinite panning
-      worldHeight: 1000000,
-      events: this.app.renderer.events, // Required for Pixi v8
-      passiveWheel: false
-    });
-
+    // Initialize custom camera Viewport
+    this.viewport = new CustomViewport(this.app, containerEl);
     this.app.stage.addChild(this.viewport);
-
-    // Enable drag, pinch, wheel zoom, decel
-    this.viewport
-      .drag()
-      .pinch()
-      .wheel()
-      .decelerate();
 
     // Center camera on (0, 0)
     this.viewport.moveCenter(0, 0);
@@ -152,12 +332,13 @@ class BoardRenderer {
     });
 
     // Handle clicks on the canvas
-    this.viewport.on('clicked', (e) => {
+    this.app.stage.on('pointertap', (e) => {
+      // Avoid firing clicks if we just panned/dragged the board
+      if (this.viewport.isDragging) return;
       this.handleCanvasClicked(e);
     });
 
     // Track mouse pointer for tooltips/hover
-    this.viewport.interactive = true;
     this.viewport.on('pointermove', (e) => {
       this.handlePointerMove(e);
     });
@@ -196,11 +377,10 @@ class BoardRenderer {
     this.viewport.addChildAt(this.gridTilingSprite, 0);
   }
 
-  // Viewport moved: update loaded chunks and update tiling sprite position
+  // Viewport moved: update loaded chunks
   handleViewportMoved() {
     const bounds = this.viewport.getVisibleBounds();
     
-    // Request ChunkManager to fetch visible tiles
     if (window.colyseusClientInstance) {
       chunkManager.updateViewport(bounds, window.colyseusClientInstance);
     }
@@ -249,12 +429,10 @@ class BoardRenderer {
           bonusGraphics.fill({ color: theme.star, alpha: 0.3 });
           this.drawStar(bonusGraphics, posX + TILE_SIZE/2, posY + TILE_SIZE/2, 5, 14, 6);
         } else if (bonus !== BONUS_TYPES.NONE) {
-          // Draw bonus color square
           const color = theme.bonusBg[bonus];
           bonusGraphics.fill({ color, alpha: 0.25 });
           bonusGraphics.rect(posX + 1.5, posY + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
 
-          // Add bonus text label
           const style = new PIXI.TextStyle({
             fontFamily: 'Outfit',
             fontSize: 12,
@@ -311,7 +489,6 @@ class BoardRenderer {
     // Base background
     const gfx = new PIXI.Graphics();
     gfx.fill({ color: theme.tileBg, alpha: isPending ? 0.7 : 1 });
-    // Border
     const borderColor = isPending ? theme.star : theme.tileBorder;
     gfx.stroke({ width: 2.5, color: borderColor, alpha: isPending ? 0.6 : 1 });
     gfx.rect(3, 3, TILE_SIZE - 6, TILE_SIZE - 6);
@@ -343,9 +520,8 @@ class BoardRenderer {
     }
   }
 
-  // Canvas Click: calculates tile coordinate and triggers action
   handleCanvasClicked(e) {
-    const worldPoint = this.viewport.toWorld(e.screen);
+    const worldPoint = this.viewport.toWorld(e.global);
     const gridX = Math.floor(worldPoint.x / TILE_SIZE);
     const gridY = Math.floor(worldPoint.y / TILE_SIZE);
 
@@ -354,7 +530,6 @@ class BoardRenderer {
     }
   }
 
-  // Pointer move: detects hover on placed tiles to display tooltip
   handlePointerMove(e) {
     const worldPoint = this.viewport.toWorld(e.global);
     const gridX = Math.floor(worldPoint.x / TILE_SIZE);
@@ -367,9 +542,7 @@ class BoardRenderer {
     }
   }
 
-  // Redraw pending tiles layer (ghost tiles)
   drawPendingTiles() {
-    // Clear old sprites
     this.pendingContainer.removeChildren();
     
     const pending = boardState.getPendingTilesArray();
@@ -378,7 +551,6 @@ class BoardRenderer {
     }
   }
 
-  // Swap theme colors dynamically
   setTheme(themeName) {
     if (!THEME_COLORS[themeName]) return;
     this.currentTheme = themeName;
@@ -386,11 +558,8 @@ class BoardRenderer {
     this.app.renderer.background.color = THEME_COLORS[themeName].bg;
     this.drawBackgroundGrid();
 
-    // Redraw all loaded chunks with new colors
     for (const [key, oldCont] of this.chunkContainers.entries()) {
       const [cx, cy] = key.split(',').map(Number);
-      const tiles = boardState.getPendingTilesArray(); // We don't have all tiles inside boardState for this chunk
-      // So let's reload chunk drawing
       const chunkTiles = [];
       for (const t of boardState.tiles.values()) {
         const startX = cx * 32;
@@ -407,7 +576,6 @@ class BoardRenderer {
     this.drawPendingTiles();
   }
 
-  // Clear all rendered chunk containers
   clear() {
     for (const cont of this.chunkContainers.values()) {
       this.viewport.removeChild(cont);
