@@ -35,6 +35,25 @@ class HUD {
       this.closeSettingsModal();
     });
 
+    // Setup rules modal toggle
+    const btnRules = document.getElementById('btn-rules');
+    const btnBrowserRules = document.getElementById('btn-browser-rules');
+    const btnCloseRules = document.querySelector('#rules-modal .close-btn');
+    const rulesModal = document.getElementById('rules-modal');
+
+    const handleRulesOpen = () => {
+      modalContainer.classList.remove('hidden');
+      rulesModal.classList.remove('hidden');
+    };
+
+    if (btnRules) btnRules.addEventListener('click', handleRulesOpen);
+    if (btnBrowserRules) btnBrowserRules.addEventListener('click', handleRulesOpen);
+    if (btnCloseRules) btnCloseRules.addEventListener('click', () => {
+      modalContainer.classList.add('hidden');
+      rulesModal.classList.add('hidden');
+    });
+
+
     // Admin action: Force reset season
     const btnAdminReset = document.getElementById('btn-admin-reset');
     btnAdminReset.addEventListener('click', () => {

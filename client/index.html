@@ -51,8 +51,10 @@
               <span id="hud-player-score" class="stat-value">0</span>
             </div>
           </div>
+          <button id="btn-rules" class="icon-btn tooltip" data-tooltip="How to Play">❓</button>
           <button id="btn-settings" class="icon-btn tooltip" data-tooltip="Settings">⚙️</button>
         </div>
+
       </header>
 
       <!-- Connection / Loading Status Toast -->
@@ -93,8 +95,12 @@
                 <p>Infinite Multiplayer Word World</p>
               </div>
             </div>
-            <button id="btn-browser-profile" class="profile-pill">Guest</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button id="btn-browser-rules" class="rules-pill" style="background: rgba(13, 213, 255, 0.1); border: 1px solid var(--accent-color); color: var(--accent-color); border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">Rules ❓</button>
+              <button id="btn-browser-profile" class="profile-pill">Guest</button>
+            </div>
           </header>
+
 
           <div class="browser-content">
             <!-- Join Global World -->
@@ -294,7 +300,43 @@
           </div>
         </div>
 
+        <!-- 5. Game Rules / How to Play Modal -->
+        <div id="rules-modal" class="modal-card glass-panel hidden">
+          <div class="modal-header">
+            <h3>How to Play & Game Rules</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body rules-body" style="max-height: 65vh; overflow-y: auto; padding-right: 8px; font-size: 0.9rem; line-height: 1.5; color: var(--text-primary);">
+            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; font-family: 'Outfit', sans-serif;">🎮 Game Overview</h4>
+            <p style="margin-bottom: 16px; color: var(--text-secondary);">Welcome to <strong>Words Builder</strong>! Place letter tiles on an infinite, shared board, connect to existing words, and compete globally. Every word you build expands the world!</p>
+            
+            <h4 style="color: var(--accent-color); margin-bottom: 8px; font-family: 'Outfit', sans-serif;">📜 Gameplay Rules</h4>
+            <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--text-secondary);">
+              <li style="margin-bottom: 8px;"><strong>Tile Rack</strong>: You have a rack of 7 letters at the bottom. Drag and drop tiles onto any empty grid squares.</li>
+              <li style="margin-bottom: 8px;"><strong>Board Connections</strong>: The very first word placed in a new room must cover the center star tile. Every subsequent word must connect to at least one letter already on the board.</li>
+              <li style="margin-bottom: 8px;"><strong>The Cross-Word Rule</strong>: When placing a word, all adjacent words formed horizontally or vertically (cross-words) must also be valid in the dictionary.</li>
+              <li style="margin-bottom: 8px;"><strong>Tile Refills</strong>: When you submit a valid word, the letters you placed are permanently removed from your rack and automatically refilled with new tiles.</li>
+              <li style="margin-bottom: 8px;"><strong>Invalid Words</strong>: If your placement is misspelled or violates connection rules, the word is rejected, and your tiles are safely returned to your rack (no loss of tiles).</li>
+              <li style="margin-bottom: 8px;"><strong>Exchanging Tiles</strong>: Click <strong>Exchange</strong> to swap all your tiles for new ones. Note: This action counts as 1 placement play.</li>
+              <li style="margin-bottom: 8px;"><strong>Play Limits</strong>: Depending on the session config, you have a set number of plays per day (e.g. 50 placements) to ensure fair play.</li>
+            </ul>
+
+            <h4 style="color: var(--accent-color); margin-bottom: 8px; font-family: 'Outfit', sans-serif;">⭐️ Scoring & Multipliers</h4>
+            <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--text-secondary);">
+              <li style="margin-bottom: 8px;"><strong>Letter Points</strong>: Each letter tile lists its standard points value (e.g. A=1, Z=10). Wildcards (`*`) score 0 points.</li>
+              <li style="margin-bottom: 8px;"><strong>Multiplier Squares</strong>:
+                <ul style="margin-top: 4px; padding-left: 16px;">
+                  <li><span style="color: var(--accent-color); font-weight: bold;">DL / TL</span>: Double / Triple Letter Score (multiplies that single tile).</li>
+                  <li><span style="color: var(--accent-alt); font-weight: bold;">DW / TW</span>: Double / Triple Word Score (multiplies the entire word's value).</li>
+                </ul>
+              </li>
+              <li style="margin-bottom: 8px;"><strong>Bingo Bonus</strong>: Place all 7 tiles in a single turn to earn a massive <strong>+50 points</strong> bonus!</li>
+            </ul>
+          </div>
+        </div>
+
       </div> <!-- End Modal Container -->
+
 
     </div> <!-- End UI Container -->
   </div> <!-- End App -->
