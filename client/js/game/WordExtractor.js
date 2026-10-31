@@ -16,9 +16,10 @@ class WordExtractor {
     const direction = isHorizontal ? 'H' : 'V';
     const words = [];
 
-    // Helper: get tile at coordinate (checks both pending and permanent)
+    // Combined lookup: pending first, then committed boardState
+    const pendingMap = new Map(sortedTiles.map(t => [`${t.x},${t.y}`, t]));
     const getTileAt = (x, y) => {
-      return boardState.getTile(x, y);
+      return pendingMap.get(`${x},${y}`) || boardState.getTile(x, y);
     };
 
     // If multiple tiles are placed, there is a main word in the direction of placement

@@ -254,88 +254,65 @@
           </form>
         </div>
 
-        <!-- 4. Authenticate (Register/Login) Modal -->
+        <!-- 3.5 Rules Modal -->
+        <div id="rules-modal" class="modal-card glass-panel hidden" style="max-width: 520px; max-height: 85vh; overflow-y: auto;">
+          <div class="modal-header">
+            <h3>📖 How to Play Words Builder</h3>
+            <button class="close-btn">&times;</button>
+          </div>
+          <div class="modal-body" style="font-size: 0.9rem; line-height: 1.5; color: var(--text-primary);">
+            <div style="margin-bottom: 14px;">
+              <h4 style="color: var(--accent); margin-bottom: 4px;">⭐ Starting Word</h4>
+              <p style="color: var(--text-secondary);">The very first word of the season must cover the center star tile at coordinates <code>(0, 0)</code>.</p>
+            </div>
+            <div style="margin-bottom: 14px;">
+              <h4 style="color: var(--accent); margin-bottom: 4px;">📏 Straight Lines & No Gaps</h4>
+              <p style="color: var(--text-secondary);">Tiles must be placed in a single continuous line (horizontal or vertical). Words can bridge across existing letters, but cannot have empty spaces.</p>
+            </div>
+            <div style="margin-bottom: 14px;">
+              <h4 style="color: var(--accent); margin-bottom: 4px;">🔗 Crossword Connectivity</h4>
+              <p style="color: var(--text-secondary);">Every new play must connect to at least one tile already on the board. All intersecting words formed must also be valid words.</p>
+            </div>
+            <div style="margin-bottom: 14px;">
+              <h4 style="color: var(--accent); margin-bottom: 4px;">📚 Official Dictionary</h4>
+              <p style="color: var(--text-secondary);">All words must exist in the standard SOWPODS dictionary (minimum 2 letters long).</p>
+            </div>
+            <div style="margin-bottom: 14px;">
+              <h4 style="color: var(--accent); margin-bottom: 4px;">💥 Bonus Squares & Multipliers</h4>
+              <ul style="color: var(--text-secondary); padding-left: 20px; margin: 4px 0;">
+                <li><strong>DL / TL:</strong> Double / Triple letter score (fresh tiles only).</li>
+                <li><strong>DW / TW:</strong> Double / Triple total word score.</li>
+                <li><strong>Length Multiplier:</strong> 5+ letters (1.5x), 7+ letters (2.0x).</li>
+                <li><strong>BINGO Bonus:</strong> Use all 7 rack tiles for a <strong>+50 point bonus</strong>!</li>
+              </ul>
+            </div>
+            <div>
+              <h4 style="color: var(--accent); margin-bottom: 4px;">🃏 Wildcard (*)</h4>
+              <p style="color: var(--text-secondary);">The wildcard tile can represent any letter A-Z. Its base value is 0 points, but it triggers word multipliers!</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Simple Username Modal (No password, matches username in DB to continue) -->
         <div id="auth-modal" class="modal-card glass-panel hidden">
           <div class="modal-header">
-            <h3 id="auth-title">Create Account</h3>
+            <h3 id="auth-title">Player Profile</h3>
             <button class="close-btn">&times;</button>
           </div>
           <div class="modal-body">
-            <!-- Tabs -->
-            <div class="tabs-header">
-              <button id="tab-register" class="tab-btn active">Sign Up</button>
-              <button id="tab-login" class="tab-btn">Sign In</button>
-            </div>
-
-            <!-- SignUp Form -->
-            <form id="form-register" class="auth-form">
-              <p class="form-hint">Creating an account saves your scores, stats, and custom sessions across all devices.</p>
-              <div class="form-group">
-                <label>Display Name</label>
-                <input type="text" id="reg-username" placeholder="WordSmith" required minlength="3" maxlength="20">
+            <form id="simple-auth-form" class="auth-form">
+              <p class="form-hint" style="color: var(--text-secondary); margin-bottom: 14px; font-size: 0.85rem;">
+                Enter your username to continue. If it already exists, your game stats and scores will be matched automatically!
+              </p>
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label for="username-login-input" style="display:block; margin-bottom: 6px; font-weight: 600;">Username</label>
+                <input type="text" id="username-login-input" placeholder="e.g. WordMaster" required minlength="2" maxlength="20" autofocus autocomplete="off" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; color: #fff; font-size: 1rem;">
+                <p id="auth-error-msg" style="color: #ff4d6d; font-size: 0.8rem; margin-top: 6px; min-height: 18px;"></p>
               </div>
-              <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" id="reg-email" placeholder="you@example.com" required>
-              </div>
-              <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="reg-password" placeholder="••••••••" required minlength="6">
-              </div>
-              <button type="submit" class="btn btn-primary btn-full">Sign Up & Save 🔒</button>
-            </form>
-
-            <!-- SignIn Form -->
-            <form id="form-login" class="auth-form hidden">
-              <div class="form-group">
-                <label>Email Address</label>
-                <input type="email" id="login-email" placeholder="you@example.com" required>
-              </div>
-              <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="login-password" placeholder="••••••••" required>
-              </div>
-              <button type="submit" class="btn btn-primary btn-full">Sign In 🔓</button>
+              <button type="submit" id="btn-login-submit" class="btn btn-primary btn-full">Continue to Game 🚀</button>
             </form>
           </div>
-        </div>
-
-        <!-- 5. Game Rules / How to Play Modal -->
-        <div id="rules-modal" class="modal-card glass-panel hidden">
-          <div class="modal-header">
-            <h3>How to Play & Game Rules</h3>
-            <button class="close-btn">&times;</button>
-          </div>
-          <div class="modal-body rules-body" style="max-height: 65vh; overflow-y: auto; padding-right: 8px; font-size: 0.9rem; line-height: 1.5; color: var(--text-primary);">
-            <h4 style="color: var(--accent-color); margin-top: 0; margin-bottom: 8px; font-family: 'Outfit', sans-serif;">🎮 Game Overview</h4>
-            <p style="margin-bottom: 16px; color: var(--text-secondary);">Welcome to <strong>Words Builder</strong>! Place letter tiles on an infinite, shared board, connect to existing words, and compete globally. Every word you build expands the world!</p>
-            
-            <h4 style="color: var(--accent-color); margin-bottom: 8px; font-family: 'Outfit', sans-serif;">📜 Gameplay Rules</h4>
-            <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--text-secondary);">
-              <li style="margin-bottom: 8px;"><strong>Tile Rack</strong>: You have a rack of 7 letters at the bottom. Drag and drop tiles onto any empty grid squares.</li>
-              <li style="margin-bottom: 8px;"><strong>Board Connections</strong>: The very first word placed in a new room must cover the center star tile. Every subsequent word must connect to at least one letter already on the board.</li>
-              <li style="margin-bottom: 8px;"><strong>The Cross-Word Rule</strong>: When placing a word, all adjacent words formed horizontally or vertically (cross-words) must also be valid in the dictionary.</li>
-              <li style="margin-bottom: 8px;"><strong>Tile Refills</strong>: When you submit a valid word, the letters you placed are permanently removed from your rack and automatically refilled with new tiles.</li>
-              <li style="margin-bottom: 8px;"><strong>Invalid Words</strong>: If your placement is misspelled or violates connection rules, the word is rejected, and your tiles are safely returned to your rack (no loss of tiles).</li>
-              <li style="margin-bottom: 8px;"><strong>Exchanging Tiles</strong>: Click <strong>Exchange</strong> to swap all your tiles for new ones. Note: This action counts as 1 placement play.</li>
-              <li style="margin-bottom: 8px;"><strong>Play Limits</strong>: Depending on the session config, you have a set number of plays per day (e.g. 50 placements) to ensure fair play.</li>
-            </ul>
-
-            <h4 style="color: var(--accent-color); margin-bottom: 8px; font-family: 'Outfit', sans-serif;">⭐️ Scoring & Multipliers</h4>
-            <ul style="margin-bottom: 16px; padding-left: 20px; color: var(--text-secondary);">
-              <li style="margin-bottom: 8px;"><strong>Letter Points</strong>: Each letter tile lists its standard points value (e.g. A=1, Z=10). Wildcards (`*`) score 0 points.</li>
-              <li style="margin-bottom: 8px;"><strong>Multiplier Squares</strong>:
-                <ul style="margin-top: 4px; padding-left: 16px;">
-                  <li><span style="color: var(--accent-color); font-weight: bold;">DL / TL</span>: Double / Triple Letter Score (multiplies that single tile).</li>
-                  <li><span style="color: var(--accent-alt); font-weight: bold;">DW / TW</span>: Double / Triple Word Score (multiplies the entire word's value).</li>
-                </ul>
-              </li>
-              <li style="margin-bottom: 8px;"><strong>Bingo Bonus</strong>: Place all 7 tiles in a single turn to earn a massive <strong>+50 points</strong> bonus!</li>
-            </ul>
-          </div>
-        </div>
-
-      </div> <!-- End Modal Container -->
+        </div> <!-- End Modal Container -->
 
 
     </div> <!-- End UI Container -->

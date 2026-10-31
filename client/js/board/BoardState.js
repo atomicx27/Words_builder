@@ -14,7 +14,19 @@ class BoardState {
     return tile ? { ...tile, isPending: false } : null;
   }
 
-  // Check if tile exists at coordinate
+  // Get permanent committed tile only (ignores pending tiles)
+  getPermanentTile(x, y) {
+    const key = `${x},${y}`;
+    return this.tiles.get(key) || null;
+  }
+
+  // Check if permanent committed tile exists at coordinate
+  hasPermanentTile(x, y) {
+    const key = `${x},${y}`;
+    return this.tiles.has(key);
+  }
+
+  // Check if tile exists at coordinate (checks both pending and permanent)
   hasTile(x, y) {
     const key = `${x},${y}`;
     return this.pendingTiles.has(key) || this.tiles.has(key);
@@ -77,7 +89,6 @@ class BoardState {
     return this.tiles.size === 0;
   }
 
-
   // Clear everything (on season resets)
   clearAll() {
     this.tiles.clear();
@@ -86,5 +97,8 @@ class BoardState {
 }
 
 const boardStateInstance = new BoardState();
+if (typeof window !== 'undefined') {
+  window.boardStateInstance = boardStateInstance;
+}
 export default boardStateInstance;
 export { BoardState };

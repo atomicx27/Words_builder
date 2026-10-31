@@ -1,4 +1,5 @@
 import wordExtractor from './WordExtractor.js';
+import dictionary from './Dictionary.js';
 
 class PlacementValidator {
   validate(boardState, pendingTiles) {
@@ -32,11 +33,14 @@ class PlacementValidator {
 
     const direction = isHorizontal ? 'H' : 'V';
 
-    // 3. Gaps check
+    // 3. Gaps check (combined check: pendingMap or boardState)
+    const pendingMap = new Map(sorted.map(t => [`${t.x},${t.y}`, t]));
+    const hasAny = (x, y) => pendingMap.has(`${x},${y}`) || boardState.hasTile(x, y);
+
     if (direction === 'H') {
       const y = firstTile.y;
       for (let x = sorted[0].x; x <= sorted[sorted.length - 1].x; x++) {
-        if (!boardState.hasTile(x, y)) {
+        if (!hasAny(x, y)) {
           errors.push('Word placement cannot contain empty gaps.');
           break;
         }
@@ -44,7 +48,7 @@ class PlacementValidator {
     } else {
       const x = firstTile.x;
       for (let y = sorted[0].y; y <= sorted[sorted.length - 1].y; y++) {
-        if (!boardState.hasTile(x, y)) {
+        if (!hasAny(x, y)) {
           errors.push('Word placement cannot contain empty gaps.');
           break;
         }
@@ -60,12 +64,21 @@ class PlacementValidator {
 
     // 5. Connectivity check (must connect to at least one existing tile)
     if (!isFirstWord) {
-      // An existing tile is one that is in boardState.tiles but NOT in pendingTiles
+      // An existing tile is one that is NOT in pendingMap
       const connectsToExisting = wordsFormed.some(wf =>
-        wf.tiles.some(t => boardState.tiles.has(`${t.x},${t.y}`))
+        wf.tiles.some(t => !pendingMap.has(`${t.x},${t.y}`))
       );
       if (!connectsToExisting) {
         errors.push('Your word must connect to an existing word on the board.');
+      }
+    }
+
+    // 6. Dictionary verification (if dictionary is loaded)
+    if (dictionary.isLoaded) {
+      for (const wf of wordsFormed) {
+        if (!dictionary.isValid(wf.word)) {
+          errors.push(`"${wf.word}" is not in the dictionary.`);
+        }
       }
     }
 

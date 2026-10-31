@@ -1,3 +1,5 @@
+import { initFirebase } from './firebase/firebase.js';
+import dictionary from './game/Dictionary.js';
 import authManager from './ui/AuthManager.js';
 import themePicker from './ui/ThemePicker.js';
 import sessionBrowser from './ui/SessionBrowser.js';
@@ -5,49 +7,72 @@ import hud from './ui/HUD.js';
 import actionBar from './ui/ActionBar.js';
 import boardRenderer from './board/BoardRenderer.js';
 import boardState from './board/BoardState.js';
-import chunkManager from './board/ChunkManager.js';
 import tileRack from './game/TileRack.js';
-import colyseusClient from './network/ColyseusClient.js';
+import gameRoomService from './network/GameRoomService.js';
 
 async function initGame() {
   console.log('Initializing Words Builder Client...');
 
-  // 1. Authenticate Guest or Load Existing Credentials
-  const player = await authManager.checkAuth();
-  if (!player) {
-    hud.showStatus('Failed to connect to backend server. Try reloading.', 10000);
-    return;
+  // 1. Initialize Firebase
+  try {
+    await initFirebase();
+  } catch (err) {
+    console.error('Firebase initialization error:', err);
+    hud.showStatus(`Firebase error: ${err.message}`, 12000);
   }
 
-  const playerId = player.id;
+  // 2. Start preloading the SOWPODS dictionary in background
+  dictionary.load().catch(err => {
+    console.warn('Dictionary background preload warning:', err);
+  });
 
-  // 2. Initialize UI Managers
+  // 3. Initialize UI Managers
   authManager.init();
   themePicker.init();
   actionBar.init();
-  sessionBrowser.init(playerId);
-  hud.init(colyseusClient);
+  hud.init(gameRoomService);
 
-  // 3. Initialize Board Renderer
+  // 4. Initialize Board Renderer
   const canvasContainer = document.getElementById('game-canvas-container');
   const savedTheme = localStorage.getItem('theme') || 'neon-dark';
   await boardRenderer.init(canvasContainer, savedTheme);
 
-  // 4. Setup Board Interactions
+  // 5. Setup Board Interactions (tile placing / clicking)
   setupBoardInteractions();
 
-  // 5. Connect Colyseus Client listeners
-  setupNetworkListeners(playerId);
-
-  // 6. Handle browser session joined
+  // 6. Handle room join reset
   sessionBrowser.onSessionJoined((sessionId) => {
-    // Clear client caches on entering a room
     boardState.clearAll();
     boardRenderer.clear();
-    tileRack.clear();
+    // rack preserved
+    boardRenderer.handleViewportMoved();
   });
 
-  // Start by displaying the session browser
+  // 7. Check for saved username, or prompt user to enter one
+  const player = await authManager.checkAuth();
+  if (player) {
+    onUserAuthenticated(player);
+  } else {
+    // First time visitor: show simple username prompt
+    sessionBrowser.init('');
+    sessionBrowser.show();
+    authManager.open(true);
+  }
+
+  // React to username login/changes
+  authManager.onAuthChange((p) => {
+    if (p && (!window.authenticatedPlayerId || window.authenticatedPlayerId !== p.id)) {
+      onUserAuthenticated(p);
+    }
+  });
+}
+
+function onUserAuthenticated(player) {
+  if (window.authenticatedPlayerId === player.id) return;
+  window.authenticatedPlayerId = player.id;
+  const playerId = player.id;
+  sessionBrowser.init(playerId);
+  setupNetworkListeners(playerId);
   sessionBrowser.show();
 }
 
@@ -135,18 +160,17 @@ function openWildcardPicker(x, y, rackIndex) {
 }
 
 function setupNetworkListeners(playerId) {
-  // Sync Colyseus room state changes (Player list, scores, daily counts)
-  colyseusClient.onStateChange((state) => {
+  // Sync room state changes (Player list, scores, daily counts)
+  gameRoomService.onStateChange((state) => {
     hud.syncRoomState(state, playerId);
   });
 
-  // Handle direct WebSocket messages from backend
-  colyseusClient.onMessageReceived((event, data) => {
+  // Handle room events
+  gameRoomService.onMessageReceived((event, data) => {
     switch (event) {
       case 'placement_success':
-        hud.showStatus(`Word Accepted! +${data.score} points`);
-        // Notify user about words formed
-        if (data.wordsFormed.length > 0) {
+        hud.showStatus(`Word Accepted! Score: ${data.score} pts`);
+        if (data.wordsFormed && data.wordsFormed.length > 0) {
           showFloatingNotification(
             'Success', 
             `Formed: ${data.wordsFormed.map(w => `${w.word} (${w.score})`).join(', ')}`
@@ -159,12 +183,10 @@ function setupNetworkListeners(playerId) {
         break;
 
       case 'tiles_placed':
-        // Show notification toast for other players' word placements
         if (data.playerId !== playerId) {
-          const firstLetter = data.tiles[0]?.letter || '';
           showFloatingNotification(
             'Word Placed', 
-            `<strong>${data.displayName}</strong> placed tiles for +${data.score} points`
+            `<strong>${data.displayName}</strong> placed a word (+${data.score} pts)`
           );
         }
         break;
@@ -174,7 +196,7 @@ function setupNetworkListeners(playerId) {
         break;
 
       case 'admin_error':
-        hud.showStatus(`Host Error: ${data.error}`, 4000);
+        hud.showStatus(`Admin Error: ${data.error}`, 4000);
         break;
     }
   });
@@ -183,6 +205,7 @@ function setupNetworkListeners(playerId) {
 // Display sliding notification in top-right corner
 function showFloatingNotification(title, text) {
   const container = document.getElementById('notification-area');
+  if (!container) return;
   
   const toast = document.createElement('div');
   toast.className = 'notification-toast';

@@ -1,0 +1,256 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// NOTE: This app intentionally uses NO Firebase Authentication
+// (product decision: users just type a username). request.auth is
+// always null, so these rules do NOT enforce ownership. The goal is
+// shape/type validation, size limits (DoS protection), monotonic
+// counters, immutable fields, and NO destructive operations.
+// All timestamps are JS numbers (Date.now()), not Firestore Timestamps.
+//
+// Collection: players/{playerId}
+//   playerId: ^[a-z0-9_-]{2,20}$ (lowercased username)
+//   - username:    string (2..20, lower() == playerId) - display form
+//   - createdAt:   number (immutable)
+//   - lastLoginAt: number
+//
+// Collection: sessions/{sessionId}
+//   sessionId: 'global' or ^[A-Za-z0-9]{12}$
+//   - name:            string (1..40)        immutable
+//   - inviteCode:      string (4..8)         immutable
+//   - isPrivate:       bool                  immutable
+//   - adminPlayerId:   string (<= 20)        immutable
+//   - config:          map {duration, dailyWordLimit, dictionary: string,
+//                           bonusSquares, isPrivate: bool, name: string} immutable
+//   - createdAt:       number                immutable
+//   - currentSeasonId: string | null         mutable
+//   - seasonEndTime:   number                mutable
+//
+// Collection: sessions/{sessionId}/seasons/{seasonId}
+//   - startTime:     number                    immutable
+//   - endTime:       number                    immutable
+//   - status:        'active' | 'archived'     (active -> archived only)
+//   - tileCount:     int >= 0                  (never decreases)
+//   - lastPlacement: null | map {playerId, displayName, score, words, at}
+//   - archivedAt:    number (optional, only via update)
+//
+// Collection: sessions/{sessionId}/seasons/{seasonId}/chunks/{chunkId}
+//   chunkId: "<cx>_<cy>" (two ints)
+//   - cx, cy: int (must match chunkId, immutable)
+//   - tiles:  map "x_y" -> {x, y, letter, value, isWildcard, playerId, placedAt}
+//             Append-only: existing tile entries can never be removed/changed.
+//
+// Collection: sessions/{sessionId}/seasons/{seasonId}/players/{playerId}
+//   - playerId:    string (== document id)    immutable
+//   - displayName: string (1..20)
+//   - score:       int >= 0 (never decreases, starts at 0)
+//   - wordsPlaced: int >= 0 (never decreases, starts at 0)
+//   - wordsToday:  int >= 0 (resets daily)
+//   - dayKey:      string 'YYYY-MM-DD'
+//   - rack:        list (size <= 7) of 1-char strings
+//   - lastSeen:    number
+//   - createdAt:   number                     immutable
+//
+// Reads are public everywhere listed. Deletes are denied everywhere.
+// Anything not listed is denied.
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =============================================================
+    // Helper Functions
+    // =============================================================
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isStr(v, minLen, maxLen) {
+      return v is string && v.size() >= minLen && v.size() <= maxLen;
+    }
+
+    function isNonNegInt(v) {
+      return v is int && v >= 0;
+    }
+
+    // Keys changed by this update must be within the allowed list.
+    function onlyChanges(fields) {
+      return incoming().diff(existing()).affectedKeys().hasOnly(fields);
+    }
+
+    function isValidPlayerId(id) {
+      return id is string && id.matches('^[a-z0-9_-]{2,20}$');
+    }
+
+    // =============================================================
+    // Domain Validators (used in BOTH create and update)
+    // =============================================================
+
+    function isValidPlayer(data, playerId) {
+      return data.keys().hasAll(['username', 'createdAt', 'lastLoginAt']) &&
+             data.keys().hasOnly(['username', 'createdAt', 'lastLoginAt']) &&
+             isValidPlayerId(playerId) &&
+             isStr(data.username, 2, 20) &&
+             data.username.lower() == playerId &&
+             data.createdAt is number &&
+             data.lastLoginAt is number;
+    }
+
+    function isValidSessionId(sessionId) {
+      return sessionId == 'global' || sessionId.matches('^[A-Za-z0-9]{12}$');
+    }
+
+    function isValidConfig(c) {
+      return c is map &&
+             c.keys().hasOnly(['duration', 'dailyWordLimit', 'dictionary',
+                               'bonusSquares', 'isPrivate', 'name']) &&
+             isStr(c.get('duration', ''), 0, 40) &&
+             isStr(c.get('dailyWordLimit', ''), 0, 40) &&
+             isStr(c.get('dictionary', ''), 0, 40) &&
+             c.get('bonusSquares', false) is bool &&
+             c.get('isPrivate', false) is bool &&
+             isStr(c.get('name', ''), 0, 40);
+    }
+
+    function isValidSession(data, sessionId) {
+      let keys = ['name', 'inviteCode', 'isPrivate', 'adminPlayerId', 'config',
+                  'createdAt', 'currentSeasonId', 'seasonEndTime'];
+      return data.keys().hasAll(keys) &&
+             data.keys().hasOnly(keys) &&
+             isValidSessionId(sessionId) &&
+             isStr(data.name, 1, 40) &&
+             isStr(data.inviteCode, 4, 8) &&
+             data.isPrivate is bool &&
+             isStr(data.adminPlayerId, 0, 20) &&
+             isValidConfig(data.config) &&
+             data.createdAt is number &&
+             (data.currentSeasonId == null || isStr(data.currentSeasonId, 1, 64)) &&
+             data.seasonEndTime is number;
+    }
+
+    function isValidLastPlacement(lp) {
+      return lp == null || (
+        lp is map &&
+        lp.keys().hasOnly(['playerId', 'displayName', 'score', 'words', 'at']) &&
+        isStr(lp.get('playerId', ''), 0, 20) &&
+        isStr(lp.get('displayName', ''), 0, 20) &&
+        lp.get('score', 0) is int &&
+        lp.get('words', []) is list && lp.get('words', []).size() <= 20 &&
+        lp.get('at', 0) is number
+      );
+    }
+
+    function isValidSeason(data) {
+      return data.keys().hasAll(['startTime', 'endTime', 'status', 'tileCount', 'lastPlacement']) &&
+             data.keys().hasOnly(['startTime', 'endTime', 'status', 'tileCount',
+                                  'lastPlacement', 'archivedAt']) &&
+             data.startTime is number &&
+             data.endTime is number &&
+             data.status in ['active', 'archived'] &&
+             isNonNegInt(data.tileCount) &&
+             isValidLastPlacement(data.lastPlacement) &&
+             (!('archivedAt' in data) || data.archivedAt is number);
+    }
+
+    function isValidChunk(data, chunkId) {
+      return data.keys().hasAll(['cx', 'cy', 'tiles']) &&
+             data.keys().hasOnly(['cx', 'cy', 'tiles']) &&
+             data.cx is int &&
+             data.cy is int &&
+             chunkId == string(data.cx) + '_' + string(data.cy) &&
+             data.tiles is map;
+    }
+
+    function isValidSeasonPlayer(data, playerId) {
+      let keys = ['playerId', 'displayName', 'score', 'wordsPlaced', 'wordsToday',
+                  'dayKey', 'rack', 'lastSeen', 'createdAt'];
+      return data.keys().hasAll(keys) &&
+             data.keys().hasOnly(keys) &&
+             data.playerId == playerId &&
+             isValidPlayerId(playerId) &&
+             isStr(data.displayName, 1, 20) &&
+             isNonNegInt(data.score) &&
+             isNonNegInt(data.wordsPlaced) &&
+             isNonNegInt(data.wordsToday) &&
+             data.dayKey is string && data.dayKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.rack is list && data.rack.size() <= 7 &&
+             data.lastSeen is number &&
+             data.createdAt is number;
+    }
+
+    // =============================================================
+    // Rules
+    // =============================================================
+
+    // players/{playerId}
+    match /players/{playerId} {
+      allow read: if true;
+      allow create: if isValidPlayer(incoming(), playerId);
+      allow update: if isValidPlayer(incoming(), playerId) &&
+                       onlyChanges(['lastLoginAt', 'username']);
+      allow delete: if false;
+    }
+
+    // sessions/{sessionId}
+    // Queries: where('isPrivate','==',false); where('inviteCode','==',code).limit(1); get by id.
+    match /sessions/{sessionId} {
+      allow read: if true;
+      allow create: if isValidSession(incoming(), sessionId);
+      allow update: if isValidSession(incoming(), sessionId) &&
+                       onlyChanges(['currentSeasonId', 'seasonEndTime']);
+      allow delete: if false;
+
+      // sessions/{sessionId}/seasons/{seasonId}
+      match /seasons/{seasonId} {
+        allow read: if true;
+        allow create: if isValidSeason(incoming()) &&
+                         !('archivedAt' in incoming()) &&
+                         incoming().status == 'active' &&
+                         incoming().tileCount == 0;
+        allow update: if isValidSeason(incoming()) &&
+                         onlyChanges(['status', 'tileCount', 'lastPlacement', 'archivedAt']) &&
+                         incoming().tileCount >= existing().tileCount &&
+                         // status may only stay the same or go active -> archived
+                         (incoming().status == existing().status ||
+                          (existing().status == 'active' && incoming().status == 'archived'));
+        allow delete: if false;
+
+        // .../chunks/{chunkId} — append-only tile map
+        match /chunks/{chunkId} {
+          allow read: if true;
+          allow create: if isValidChunk(incoming(), chunkId);
+          allow update: if isValidChunk(incoming(), chunkId) &&
+                           onlyChanges(['tiles']) &&
+                           incoming().tiles.keys().hasAll(existing().tiles.keys()) &&
+                           incoming().tiles.diff(existing().tiles).affectedKeys()
+                             .hasOnly(incoming().tiles.diff(existing().tiles).addedKeys());
+          allow delete: if false;
+        }
+
+        // .../players/{playerId} — per-season player state
+        match /players/{playerId} {
+          allow read: if true;
+          allow create: if isValidSeasonPlayer(incoming(), playerId) &&
+                           incoming().score == 0 &&
+                           incoming().wordsPlaced == 0;
+          allow update: if isValidSeasonPlayer(incoming(), playerId) &&
+                           onlyChanges(['displayName', 'score', 'wordsPlaced', 'wordsToday',
+                                        'dayKey', 'rack', 'lastSeen']) &&
+                           incoming().score >= existing().score &&
+                           incoming().wordsPlaced >= existing().wordsPlaced;
+          allow delete: if false;
+        }
+      }
+    }
+
+    // Everything else: denied by default (no matching rule).
+  }
+}

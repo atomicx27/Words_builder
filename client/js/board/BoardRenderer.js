@@ -381,7 +381,7 @@ class BoardRenderer {
   handleViewportMoved() {
     const bounds = this.viewport.getVisibleBounds();
     
-    if (window.colyseusClientInstance) {
+    if (window.colyseusClientInstance && window.colyseusClientInstance.sessionId && window.colyseusClientInstance.seasonId) {
       chunkManager.updateViewport(bounds, window.colyseusClientInstance);
     }
   }

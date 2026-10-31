@@ -2,21 +2,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: 'client',
-  plugins: [],
+  publicDir: 'public',
   server: {
-
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      },
-      '/colyseus': {
-        target: 'http://localhost:3001',
-        ws: true,
-        changeOrigin: true
-      }
-    }
+    port: 5173
   },
   build: {
     outDir: '../dist',

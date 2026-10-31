@@ -28,3 +28,6 @@ dist-ssr/
 .agents/
 ORIGINAL_REQUEST.md
 
+
+# Firebase
+.firebase/

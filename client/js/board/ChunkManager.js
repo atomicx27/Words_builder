@@ -31,7 +31,7 @@ class ChunkManager {
 
   // Calculate and load visible chunks based on viewport bounds
   updateViewport(bounds, colyseusClient) {
-    if (!colyseusClient || !colyseusClient.room) return;
+    if (!colyseusClient || !colyseusClient.room || !colyseusClient.sessionId || !colyseusClient.seasonId) return;
 
     const chunkPixelSize = CHUNK_SIZE * TILE_SIZE; // 32 * 64 = 2048 pixels
 

@@ -1,19 +1,17 @@
 import boardRenderer from '../board/BoardRenderer.js';
 import sessionBrowser from './SessionBrowser.js';
-import { BACKEND_URL } from '../network/config.js';
-
-
+import authManager from './AuthManager.js';
 
 class HUD {
   constructor() {
     this.timerInterval = null;
     this.tooltipEl = null;
-    this.colyseusClient = null;
+    this.gameService = null;
   }
 
   // Initialize HUD overlays
-  init(colyseusClient) {
-    this.colyseusClient = colyseusClient;
+  init(gameService) {
+    this.gameService = gameService;
     this.createTooltipElement();
     
     // Set up hover tooltip handler in BoardRenderer
@@ -27,13 +25,17 @@ class HUD {
     const modalContainer = document.getElementById('modal-container');
     const settingsModal = document.getElementById('settings-modal');
 
-    btnSettings.addEventListener('click', () => {
-      this.openSettingsModal();
-    });
+    if (btnSettings) {
+      btnSettings.addEventListener('click', () => {
+        this.openSettingsModal();
+      });
+    }
 
-    btnCloseSettings.addEventListener('click', () => {
-      this.closeSettingsModal();
-    });
+    if (btnCloseSettings) {
+      btnCloseSettings.addEventListener('click', () => {
+        this.closeSettingsModal();
+      });
+    }
 
     // Setup rules modal toggle
     const btnRules = document.getElementById('btn-rules');
@@ -48,73 +50,69 @@ class HUD {
 
     if (btnRules) btnRules.addEventListener('click', handleRulesOpen);
     if (btnBrowserRules) btnBrowserRules.addEventListener('click', handleRulesOpen);
-    if (btnCloseRules) btnCloseRules.addEventListener('click', () => {
-      modalContainer.classList.add('hidden');
-      rulesModal.classList.add('hidden');
-    });
-
+    if (btnCloseRules) {
+      btnCloseRules.addEventListener('click', () => {
+        modalContainer.classList.add('hidden');
+        rulesModal.classList.add('hidden');
+      });
+    }
 
     // Admin action: Force reset season
     const btnAdminReset = document.getElementById('btn-admin-reset');
-    btnAdminReset.addEventListener('click', () => {
-      if (confirm('Are you sure you want to FORCE RESET this season? This will archive the current board snapshot, rank the leaderboard, and start a fresh board.')) {
-        this.colyseusClient.adminReset();
-        this.closeSettingsModal();
-      }
-    });
+    if (btnAdminReset) {
+      btnAdminReset.addEventListener('click', () => {
+        if (confirm('Are you sure you want to FORCE RESET this season? This will archive the current board and start a fresh board.')) {
+          this.gameService.adminReset();
+          this.closeSettingsModal();
+        }
+      });
+    }
 
-    // Save username action
+    // Save username action from Settings modal
     const btnSaveUsername = document.getElementById('btn-save-username');
     const inputUsername = document.getElementById('settings-username-input');
 
-    btnSaveUsername.addEventListener('click', async () => {
-      const newName = inputUsername.value.trim();
-      if (!newName) {
-        this.showStatus('Username cannot be empty.');
-        return;
-      }
-
-      btnSaveUsername.disabled = true;
-      btnSaveUsername.textContent = 'Saving...';
-
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/username`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ displayName: newName })
-        });
-
-
-        const data = await res.json();
-        if (!res.ok) {
-          this.showStatus(data.error || 'Failed to update username.');
+    if (btnSaveUsername) {
+      btnSaveUsername.addEventListener('click', async () => {
+        const newName = inputUsername.value.trim();
+        if (!newName) {
+          this.showStatus('Username cannot be empty.');
           return;
         }
 
-        // Save updated player
-        window.playerSession = data.player;
+        btnSaveUsername.disabled = true;
+        btnSaveUsername.textContent = 'Saving...';
 
-        // Sync to Colyseus room if connected
-        if (this.colyseusClient && this.colyseusClient.room) {
-          this.colyseusClient.room.send('change_username', { displayName: newName });
+        try {
+          const player = await authManager.loginWithUsername(newName);
+
+          // Sync to room if connected
+          if (this.gameService && this.gameService.room) {
+            this.gameService.room.send('change_username', { displayName: player.displayName });
+          }
+
+          // Update other UIs
+          sessionBrowser.updateProfileButton();
+          this.showStatus(`Username saved as "${player.displayName}"!`);
+        } catch (err) {
+          this.showStatus(err.message || 'Error updating username.');
+        } finally {
+          btnSaveUsername.disabled = false;
+          btnSaveUsername.textContent = 'Save';
         }
+      });
+    }
 
-        // Update other UIs
-        sessionBrowser.updateProfileButton();
-
-        this.showStatus('Username updated successfully!');
-      } catch (err) {
-        this.showStatus('Network error during username update.');
-      } finally {
-        btnSaveUsername.disabled = false;
-        btnSaveUsername.textContent = 'Save';
-      }
-    });
+    // Switch account button in settings
+    const btnShowAuth = document.getElementById('btn-show-auth-modal');
+    if (btnShowAuth) {
+      btnShowAuth.textContent = 'Switch / Change Username';
+      btnShowAuth.addEventListener('click', () => {
+        this.closeSettingsModal();
+        authManager.open(false);
+      });
+    }
   }
-
-
 
   // Create absolute tooltip element in DOM
   createTooltipElement() {
@@ -137,19 +135,19 @@ class HUD {
 
   // Update hover tooltip contents and position
   updateTooltip(tile, screenX, screenY) {
-    if (!tile || !this.colyseusClient || !this.colyseusClient.room) {
+    if (!tile || !this.gameService || !this.gameService.room) {
       this.tooltipEl.style.display = 'none';
       return;
     }
 
-    const state = this.colyseusClient.room.state;
+    const state = this.gameService.room.state;
     const player = state.players.get(tile.playerId);
-    const displayName = player ? player.displayName : 'Unknown Builder';
+    const displayName = player ? player.displayName : (tile.playerId || 'Builder');
     
     let text = `By ${displayName}`;
     if (tile.isPending) {
       text += ' <span style="color:var(--accent-alt)">(Pending)</span>';
-    } else {
+    } else if (tile.placedAt) {
       text += ` (${new Date(tile.placedAt).toLocaleDateString()})`;
     }
 
@@ -159,20 +157,23 @@ class HUD {
     this.tooltipEl.style.display = 'block';
   }
 
-  // Bind Colyseus Room state modifications to update HUD UI
+  // Bind room state modifications to update HUD UI
   syncRoomState(state, currentPlayerId) {
     // 1. Session Name & Code
     const nameEl = document.getElementById('hud-session-name');
     const codeEl = document.getElementById('hud-session-code');
     const sessionConfig = state.sessionConfig;
 
-    nameEl.textContent = sessionConfig.name || 'Word World';
+    if (nameEl) nameEl.textContent = sessionConfig.name || 'Word World';
     
-    if (this.colyseusClient.room.id === 'global') {
-      codeEl.style.display = 'none';
-    } else {
-      codeEl.style.display = 'inline-block';
-      codeEl.textContent = `Invite Code: ${this.colyseusClient.room.id.substring(0, 6).toUpperCase()}`;
+    if (codeEl) {
+      if (this.gameService.room.id === 'global') {
+        codeEl.style.display = 'none';
+      } else {
+        codeEl.style.display = 'inline-block';
+        const code = this.gameService.sessionData?.inviteCode || this.gameService.room.id.substring(0, 6).toUpperCase();
+        codeEl.textContent = `Invite Code: ${code}`;
+      }
     }
 
     // 2. Plays remaining today
@@ -180,18 +181,19 @@ class HUD {
     const currentPlayer = state.players.get(currentPlayerId);
 
     if (currentPlayer) {
-      // Score
-      document.getElementById('hud-player-score').textContent = String(currentPlayer.score);
+      const scoreEl = document.getElementById('hud-player-score');
+      if (scoreEl) scoreEl.textContent = String(currentPlayer.score);
 
-      // Remaining Daily placements
       const dailyLimit = sessionConfig.dailyWordLimit;
       const isUnlimited = dailyLimit === 'Unlimited' || Number(dailyLimit) <= 0;
       
-      if (isUnlimited) {
-        playsLeftEl.textContent = 'Unlimited';
-      } else {
-        const remaining = Math.max(0, Number(dailyLimit) - currentPlayer.wordsToday);
-        playsLeftEl.textContent = `${remaining}/${dailyLimit}`;
+      if (playsLeftEl) {
+        if (isUnlimited) {
+          playsLeftEl.textContent = 'Unlimited';
+        } else {
+          const remaining = Math.max(0, Number(dailyLimit) - currentPlayer.wordsToday);
+          playsLeftEl.textContent = `${remaining}/${dailyLimit}`;
+        }
       }
     }
 
@@ -200,7 +202,8 @@ class HUD {
     state.players.forEach(p => {
       if (p.isOnline) onlineCount++;
     });
-    document.getElementById('hud-online-count').textContent = String(onlineCount);
+    const onlineEl = document.getElementById('hud-online-count');
+    if (onlineEl) onlineEl.textContent = String(Math.max(1, onlineCount));
 
     // 4. Set countdown timer
     this.updateSeasonTimer(state.seasonEndTime);
@@ -211,6 +214,7 @@ class HUD {
     if (this.timerInterval) clearInterval(this.timerInterval);
 
     const timerEl = document.getElementById('hud-season-timer');
+    if (!timerEl) return;
 
     const tick = () => {
       const diff = endTime - Date.now();
@@ -254,33 +258,20 @@ class HUD {
     const usernameInput = document.getElementById('settings-username-input');
     const accountTypeEl = document.getElementById('settings-account-type');
 
-    // Hide other modals
     createModal.classList.add('hidden');
     authModal.classList.add('hidden');
 
-    // Load credentials info
-    if (window.playerSession) {
-      usernameInput.value = window.playerSession.displayName;
-      accountTypeEl.textContent = window.playerSession.isGuest ? 'Guest Account' : 'Registered Account';
-      
-      const upgradeBtn = document.getElementById('btn-show-auth-modal');
-      if (window.playerSession.isGuest) {
-        upgradeBtn.style.display = 'block';
-      } else {
-        upgradeBtn.style.display = 'none';
-      }
+    const player = authManager.getCurrentPlayer() || window.playerSession;
+    if (player) {
+      if (usernameInput) usernameInput.value = player.displayName;
+      if (accountTypeEl) accountTypeEl.textContent = `Player: ${player.displayName}`;
     }
 
-
-    // Toggle admin panel visibility if the current user is host admin
-    if (this.colyseusClient && this.colyseusClient.room) {
-      const state = this.colyseusClient.room.state;
-      // We look up if adminPlayerId matches currentPlayerId
-      // In room.state, sessionConfig doesn't expose adminPlayerId, so we get it from local cache
+    if (this.gameService && this.gameService.room) {
       const isAdmin = window.isAdminOfSession;
-      if (isAdmin) {
+      if (isAdmin && adminPanel) {
         adminPanel.classList.remove('hidden');
-      } else {
+      } else if (adminPanel) {
         adminPanel.classList.add('hidden');
       }
     }
@@ -296,9 +287,9 @@ class HUD {
     settingsModal.classList.add('hidden');
   }
 
-  // Display status overlays
   showStatus(text, duration = 3000) {
     const toast = document.getElementById('status-toast');
+    if (!toast) return;
     toast.textContent = text;
     toast.classList.remove('hidden');
 

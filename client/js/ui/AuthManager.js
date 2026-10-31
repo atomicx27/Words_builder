@@ -1,184 +1,202 @@
-import hud from './HUD.js';
-import sessionBrowser from './SessionBrowser.js';
-import { BACKEND_URL } from '../network/config.js';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { getDb } from '../firebase/firebase.js';
 
+const STORAGE_KEY = 'words_builder_username';
 
 class AuthManager {
   constructor() {
+    this.currentPlayer = null;
     this.modal = null;
     this.container = null;
+    this.onAuthChangeCallbacks = [];
   }
 
-  // Auto sign-in or create guest on load
-  async checkAuth() {
-    const savedPlayerId = localStorage.getItem('playerId');
-    
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/guest`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ playerId: savedPlayerId })
-      });
+  onAuthChange(callback) {
+    this.onAuthChangeCallbacks.push(callback);
+  }
 
-
-      const data = await res.json();
-      if (!res.ok || !data.player) {
-        console.error('Failed to authenticate guest.');
-        return null;
+  emitAuthChange() {
+    for (const cb of this.onAuthChangeCallbacks) {
+      try {
+        cb(this.currentPlayer);
+      } catch (err) {
+        console.error('Error in onAuthChange callback:', err);
       }
-
-      // Save player to window scope
-      window.playerSession = data.player;
-      localStorage.setItem('playerId', data.player.id);
-      
-      return data.player;
-    } catch (err) {
-      console.error('Network error during guest authentication:', err);
-      return null;
     }
   }
 
-  // Initialize UI event handlers
+  getCurrentPlayer() {
+    return this.currentPlayer;
+  }
+
+  // Normalize username for document ID (must match firestore rules: ^[a-z0-9_-]{2,20}$)
+  normalizePlayerId(username) {
+    return username.trim().toLowerCase();
+  }
+
+  validateUsername(username) {
+    if (!username || typeof username !== 'string') {
+      return { valid: false, error: 'Username is required.' };
+    }
+    const trimmed = username.trim();
+    if (trimmed.length < 2 || trimmed.length > 20) {
+      return { valid: false, error: 'Username must be between 2 and 20 characters.' };
+    }
+    const regex = /^[a-zA-Z0-9_-]{2,20}$/;
+    if (!regex.test(trimmed)) {
+      return { valid: false, error: 'Username can only contain letters, numbers, underscores, and dashes.' };
+    }
+    return { valid: true, username: trimmed };
+  }
+
+  // Attempt to restore saved username from localStorage
+  async checkAuth() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const val = this.validateUsername(saved);
+      if (val.valid) {
+        try {
+          const player = await this.loginWithUsername(val.username);
+          return player;
+        } catch (err) {
+          console.warn('Auto-login with saved username failed:', err);
+        }
+      }
+    }
+    return null;
+  }
+
+  // Login or create player profile matching only the username in Firestore
+  async loginWithUsername(rawUsername) {
+    const val = this.validateUsername(rawUsername);
+    if (!val.valid) {
+      throw new Error(val.error);
+    }
+
+    const username = val.username;
+    const playerId = this.normalizePlayerId(username);
+    const db = getDb();
+    const playerRef = doc(db, 'players', playerId);
+
+    const now = Date.now();
+    const snap = await getDoc(playerRef);
+
+    let playerObj;
+    if (snap.exists()) {
+      // Existing profile found: match username, update lastLoginAt and continue
+      const data = snap.data();
+      await updateDoc(playerRef, {
+        lastLoginAt: now,
+        username: username // preserve latest casing
+      });
+      playerObj = {
+        id: playerId,
+        displayName: username,
+        createdAt: data.createdAt || now,
+        lastLoginAt: now
+      };
+    } else {
+      // First time player: create new profile matching this username
+      playerObj = {
+        username: username,
+        createdAt: now,
+        lastLoginAt: now
+      };
+      await setDoc(playerRef, playerObj);
+      playerObj = {
+        id: playerId,
+        displayName: username,
+        createdAt: now,
+        lastLoginAt: now
+      };
+    }
+
+    this.currentPlayer = playerObj;
+    window.playerSession = playerObj;
+    localStorage.setItem(STORAGE_KEY, username);
+    localStorage.setItem('playerId', playerId);
+
+    this.emitAuthChange();
+    return playerObj;
+  }
+
   init() {
     this.container = document.getElementById('modal-container');
     this.modal = document.getElementById('auth-modal');
 
-    // Tab switching
-    const tabRegister = document.getElementById('tab-register');
-    const tabLogin = document.getElementById('tab-login');
-    const formRegister = document.getElementById('form-register');
-    const formLogin = document.getElementById('form-login');
-
-    tabRegister.addEventListener('click', () => {
-      tabRegister.classList.add('active');
-      tabLogin.classList.remove('active');
-      formRegister.classList.remove('hidden');
-      formLogin.classList.add('hidden');
-    });
-
-    tabLogin.addEventListener('click', () => {
-      tabLogin.classList.add('active');
-      tabRegister.classList.remove('active');
-      formLogin.classList.remove('hidden');
-      formRegister.classList.add('hidden');
-    });
-
     // Close button
-    this.modal.querySelector('.close-btn').addEventListener('click', () => {
-      this.close();
-    });
+    const closeBtn = this.modal?.querySelector('.close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        if (this.currentPlayer) {
+          this.close();
+        }
+      });
+    }
 
-    // Form Submit: Register/Upgrade
-    formRegister.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.handleRegister();
-    });
+    // Simple username form submit
+    const authForm = document.getElementById('simple-auth-form');
+    if (authForm) {
+      authForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('username-login-input');
+        const submitBtn = document.getElementById('btn-login-submit');
+        const errEl = document.getElementById('auth-error-msg');
+        if (!input) return;
 
-    // Form Submit: Login
-    formLogin.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.handleLogin();
-    });
+        const username = input.value.trim();
+        if (!username) return;
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Continuing...';
+        if (errEl) errEl.textContent = '';
+
+        try {
+          await this.loginWithUsername(username);
+          this.close();
+        } catch (err) {
+          if (errEl) {
+            errEl.textContent = err.message || 'Failed to continue with username.';
+          }
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue to Game';
+        }
+      });
+    }
+  }
+
+  open(mandatory = false) {
+    if (!this.container || !this.modal) return;
+    this.container.classList.remove('hidden');
+    this.modal.classList.remove('hidden');
+
+    const closeBtn = this.modal.querySelector('.close-btn');
+    if (closeBtn) {
+      closeBtn.style.display = mandatory ? 'none' : 'block';
+    }
+
+    const input = document.getElementById('username-login-input');
+    if (input) {
+      input.value = this.currentPlayer ? this.currentPlayer.displayName : (localStorage.getItem(STORAGE_KEY) || '');
+      setTimeout(() => input.focus(), 50);
+    }
   }
 
   close() {
-    this.container.classList.add('hidden');
-    this.modal.classList.add('hidden');
-  }
-
-  // Sign up guest -> permanent
-  async handleRegister() {
-    const displayName = document.getElementById('reg-username').value.trim();
-    const email = document.getElementById('reg-email').value.trim();
-    const password = document.getElementById('reg-password').value.trim();
-
-    if (!displayName || !email || !password) return;
-
-    hud.showStatus('Creating account...');
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ displayName, email, password })
-      });
-
-
-      const data = await res.json();
-      if (!res.ok) {
-        hud.showStatus(data.error || 'Failed to create account.');
-        return;
-      }
-
-      window.playerSession = data.player;
-      
-      hud.showStatus('Account upgraded successfully! 🔒');
-      sessionBrowser.updateProfileButton();
-      
-      // Update settings UI
-      const usernameInput = document.getElementById('settings-username-input');
-      const accountTypeEl = document.getElementById('settings-account-type');
-      if (usernameInput) usernameInput.value = displayName;
-      if (accountTypeEl) accountTypeEl.textContent = 'Registered Account';
-
-      this.close();
-
-    } catch (err) {
-      hud.showStatus('Network error during registration.');
+    if (this.container && this.modal) {
+      this.container.classList.add('hidden');
+      this.modal.classList.add('hidden');
     }
   }
 
-  // Log in existing user
-  async handleLogin() {
-    const email = document.getElementById('login-email').value.trim();
-    const password = document.getElementById('login-password').value.trim();
-
-    if (!email || !password) return;
-
-    hud.showStatus('Signing in...');
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      });
-
-
-      const data = await res.json();
-      if (!res.ok) {
-        hud.showStatus(data.error || 'Invalid credentials.');
-        return;
-      }
-
-      window.playerSession = data.player;
-      localStorage.setItem('playerId', data.player.id);
-      
-      hud.showStatus(`Welcome back, ${data.player.displayName}!`);
-      
-      // Update browser & settings UI
-      sessionBrowser.playerId = data.player.id;
-      sessionBrowser.updateProfileButton();
-      
-      const usernameInput = document.getElementById('settings-username-input');
-      const accountTypeEl = document.getElementById('settings-account-type');
-      if (usernameInput) usernameInput.value = data.player.displayName;
-      if (accountTypeEl) accountTypeEl.textContent = 'Registered Account';
-
-      this.close();
-
-      
-      // Re-trigger browser reload to fetch rooms under new ID
-      sessionBrowser.loadPublicSessions();
-    } catch (err) {
-      hud.showStatus('Network error during login.');
-    }
+  logout() {
+    this.currentPlayer = null;
+    window.playerSession = null;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('playerId');
+    this.emitAuthChange();
+    this.open(true);
   }
 }
 

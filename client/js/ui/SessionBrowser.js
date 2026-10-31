@@ -1,7 +1,7 @@
-import colyseusClient from '../network/ColyseusClient.js';
+import gameRoomService from '../network/GameRoomService.js';
+import sessionService from '../network/SessionService.js';
+import authManager from './AuthManager.js';
 import hud from './HUD.js';
-import { BACKEND_URL } from '../network/config.js';
-
 
 class SessionBrowser {
   constructor() {
@@ -17,6 +17,11 @@ class SessionBrowser {
 
   init(playerId) {
     this.playerId = playerId;
+    if (this.initialized) {
+      this.updateProfileButton();
+      return;
+    }
+    this.initialized = true;
     this.overlay = document.getElementById('session-browser-overlay');
 
     // Button: Enter Global World
@@ -29,7 +34,7 @@ class SessionBrowser {
       this.joinByInviteCode();
     });
 
-    // Profile Pill: Show signup/login modal
+    // Profile Pill: Show username switch / login modal
     document.getElementById('btn-browser-profile').addEventListener('click', () => {
       this.openAuthModal();
     });
@@ -69,8 +74,17 @@ class SessionBrowser {
     // Setup HUD return to browser button
     document.getElementById('btn-show-browser').addEventListener('click', () => {
       if (confirm('Leave current word world and return to the session browser?')) {
-        colyseusClient.leave();
+        gameRoomService.leave();
         this.show();
+      }
+    });
+
+    // Listen to auth changes
+    authManager.onAuthChange((player) => {
+      if (player) {
+        this.playerId = player.id;
+        this.updateProfileButton();
+        this.loadPublicSessions();
       }
     });
   }
@@ -93,27 +107,39 @@ class SessionBrowser {
 
   updateProfileButton() {
     const btn = document.getElementById('btn-browser-profile');
-    if (window.playerSession) {
-      const name = window.playerSession.displayName;
-      const isGuest = window.playerSession.isGuest;
-      btn.textContent = isGuest ? `${name} (Guest)` : name;
-      btn.style.borderColor = isGuest ? 'var(--border-color)' : 'var(--accent)';
+    const player = authManager.getCurrentPlayer() || window.playerSession;
+    if (player) {
+      btn.textContent = `👤 ${player.displayName}`;
+      btn.style.borderColor = 'var(--accent)';
+    } else {
+      btn.textContent = '👤 Enter Username';
+      btn.style.borderColor = 'var(--border-color)';
     }
   }
 
-  // Connect to Colyseus Room
+  // Connect to Game Session
   async joinSession(sessionId, isAdmin = false) {
-    hud.showStatus('Connecting to world server...', 5000);
+    if (this.isJoining) return;
+    if (!this.playerId) {
+      authManager.open(true);
+      return;
+    }
+
+    this.isJoining = true;
+    hud.showStatus('Connecting to word world...', 4000);
     try {
       window.isAdminOfSession = isAdmin;
-      await colyseusClient.joinSession(sessionId, this.playerId);
+      await gameRoomService.joinSession(sessionId, this.playerId);
       
       this.hide();
       if (this.onSessionJoinedCallback) {
         this.onSessionJoinedCallback(sessionId);
       }
     } catch (err) {
-      hud.showStatus('Error: Failed to connect to server.');
+      console.error('Failed to join session:', err);
+      hud.showStatus(`Error: ${err.message || 'Failed to connect to world.'}`, 5000);
+    } finally {
+      this.isJoining = false;
     }
   }
 
@@ -129,20 +155,17 @@ class SessionBrowser {
 
     hud.showStatus('Locating session...');
     try {
-      const res = await fetch(`${BACKEND_URL}/api/sessions/code/${code}`);
-
-      const data = await res.json();
-      
-      if (!res.ok || !data.session) {
-        hud.showStatus(data.error || 'Session not found.');
+      const session = await sessionService.getSessionByCode(code);
+      if (!session) {
+        hud.showStatus('Session not found for that invite code.', 4000);
         return;
       }
 
-      // Check if current user is admin of this session
-      const isAdmin = data.session.adminPlayerId === this.playerId;
-      await this.joinSession(data.session.id, isAdmin);
+      const isAdmin = session.adminPlayerId === this.playerId;
+      await this.joinSession(session.id, isAdmin);
       input.value = '';
     } catch (err) {
+      console.error('Error joining by invite code:', err);
       hud.showStatus('Error joining room by code.');
     }
   }
@@ -153,22 +176,15 @@ class SessionBrowser {
     listEl.innerHTML = '<p class="loading-placeholder">Loading active worlds...</p>';
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/sessions`);
-
-      const data = await res.json();
-
-      if (!res.ok || !data.sessions) {
-        listEl.innerHTML = '<p class="loading-placeholder">Failed to load public sessions.</p>';
-        return;
-      }
+      const sessions = await sessionService.getPublicSessions();
 
       listEl.innerHTML = '';
-      if (data.sessions.length === 0) {
+      if (!sessions || sessions.length === 0) {
         listEl.innerHTML = '<p class="loading-placeholder">No active custom public worlds. Create one!</p>';
         return;
       }
 
-      data.sessions.forEach(session => {
+      sessions.forEach(session => {
         const card = document.createElement('div');
         card.className = 'session-row-card';
         
@@ -181,10 +197,9 @@ class SessionBrowser {
         
         const meta = document.createElement('div');
         meta.className = 'session-card-meta';
-        meta.innerHTML = `
-          <span>Limit: ${session.config.dailyWordLimit} words/day</span> | 
-          <span>Duration: ${session.config.duration.replace('_', ' ')}</span>
-        `;
+        const limitStr = session.config?.dailyWordLimit === '0' ? 'Unlimited' : `${session.config?.dailyWordLimit || '10'} words/day`;
+        const durStr = (session.config?.duration || 'ONE_WEEK').replace('_', ' ');
+        meta.innerHTML = `<span>Limit: ${limitStr}</span> | <span>Duration: ${durStr}</span>`;
         details.appendChild(meta);
         
         card.appendChild(details);
@@ -203,7 +218,8 @@ class SessionBrowser {
         listEl.appendChild(card);
       });
     } catch (err) {
-      listEl.innerHTML = '<p class="loading-placeholder">Error connecting to session API.</p>';
+      console.error('Error loading public sessions:', err);
+      listEl.innerHTML = '<p class="loading-placeholder">Error connecting to database.</p>';
     }
   }
 
@@ -222,51 +238,28 @@ class SessionBrowser {
     hud.showStatus('Creating custom world...');
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/sessions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name,
-          config: {
-            duration,
-            dailyWordLimit,
-            dictionary,
-            isPrivate,
-            bonusSquares
-          }
-        })
+      const newSession = await sessionService.createSession(name, this.playerId, {
+        duration,
+        dailyWordLimit,
+        dictionary,
+        isPrivate,
+        bonusSquares
       });
-
-
-      const data = await res.json();
-      if (!res.ok || !data.session) {
-        hud.showStatus(data.error || 'Failed to create session.');
-        return;
-      }
 
       // Hide modal
       document.getElementById('modal-container').classList.add('hidden');
       document.getElementById('create-session-modal').classList.add('hidden');
 
-      // Join new session (user is admin)
-      await this.joinSession(data.session.id, true);
+      // Join new session as admin
+      await this.joinSession(newSession.id, true);
     } catch (err) {
-      hud.showStatus('Error creating custom session.');
+      console.error('Error creating custom session:', err);
+      hud.showStatus(`Error creating custom session: ${err.message || ''}`, 4000);
     }
   }
 
   openAuthModal() {
-    const modalContainer = document.getElementById('modal-container');
-    const authModal = document.getElementById('auth-modal');
-    
-    // Hide other modals
-    document.getElementById('settings-modal').classList.add('hidden');
-    document.getElementById('create-session-modal').classList.add('hidden');
-
-    modalContainer.classList.remove('hidden');
-    authModal.classList.remove('hidden');
+    authManager.open(false);
   }
 }
 

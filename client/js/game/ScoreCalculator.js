@@ -61,6 +61,16 @@ class ScoreCalculator {
       });
     }
 
+    // Bingo bonus: all 7 rack tiles used in a single play
+    if (pendingTiles.length >= 7) {
+      totalScore += 50;
+      breakdown.push({
+        word: 'BINGO!',
+        score: 50,
+        lengthMultiplier: 1.0
+      });
+    }
+
     return {
       score: totalScore,
       breakdown
